@@ -1,0 +1,57 @@
+{
+  "name": "@imenam/mcp-design",
+  "version": "1.0.0",
+  "main": "dist/src/index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "generate-version": "node scripts/generate-version.js",
+    "build:backend": "npm run generate-version && tsc",
+    "build:gui": "cd gui && npm install && npm run build",
+    "build": "npm run build:backend && npm run build:gui",
+    "start": "node dist/src/index.js",
+    "test": "node --test \"dist/test/*.test.js\"",
+    "prepublishOnly": "npm run build",
+    "release": "npm version patch && npm publish && git push --follow-tags"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "design",
+    "canvas",
+    "ui",
+    "mockup",
+    "ai",
+    "agent"
+  ],
+  "author": "Imena",
+  "license": "ISC",
+  "description": "MCP server providing a simple design canvas: the agent creates shapes and text, the user refines them in a GUI, and the agent picks the edits back up.",
+  "type": "module",
+  "bin": {
+    "mcp-design": "dist/src/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/src",
+    "dist/shared",
+    "gui/dist",
+    "README.md",
+    "scripts"
+  ],
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@imenam/mcp-gui-interface": "^1.0.11",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^17.4.2",
+    "hono": "^4.13.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+gui/dist/
+gui/node_modules/
+.env
+.design-data/
+.mcp.json
+data/
