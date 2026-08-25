@@ -15,6 +15,18 @@ export function useKeyboard() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return
 
+      // Barre espace maintenue : le canvas passe en déplacement de vue. Le
+      // preventDefault empêche le défilement de page par défaut du navigateur.
+      if (event.code === 'Space' && !event.repeat) {
+        event.preventDefault()
+        useDesignStore.getState().setPanMode(true)
+        return
+      }
+      if (event.code === 'Space') {
+        event.preventDefault()
+        return
+      }
+
       const store = useDesignStore.getState()
       if (!store.design) return
 
@@ -29,6 +41,12 @@ export function useKeyboard() {
       if (modifier && event.key.toLowerCase() === 'y') {
         event.preventDefault()
         store.redo()
+        return
+      }
+      if (modifier && event.key.toLowerCase() === 'g') {
+        event.preventDefault()
+        if (event.shiftKey) store.ungroupSelected()
+        else store.groupSelected()
         return
       }
       if (modifier && event.key.toLowerCase() === 'd') {
@@ -60,10 +78,8 @@ export function useKeyboard() {
         const dx = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0
         const dy = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0
 
-        const selected = new Set(store.selectedIds)
-        store.replaceNodes(
-          store.design.nodes.map((node) => (selected.has(node.id) ? { ...node, x: node.x + dx, y: node.y + dy } : node))
-        )
+        const startNodes = store.design.nodes.filter((node) => store.selectedIds.includes(node.id))
+        store.moveSelection(dx, dy, startNodes)
         return
       }
 
@@ -71,7 +87,20 @@ export function useKeyboard() {
       if (tool) store.setTool(tool)
     }
 
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') useDesignStore.getState().setPanMode(false)
+    }
+    // Un changement de fenêtre pendant que la barre espace est enfoncée ne doit
+    // pas laisser le canvas bloqué en mode déplacement.
+    const onBlur = () => useDesignStore.getState().setPanMode(false)
+
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [])
 }

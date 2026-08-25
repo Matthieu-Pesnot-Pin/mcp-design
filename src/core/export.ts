@@ -8,6 +8,7 @@ import {
   textLines,
   type RenderNode,
 } from "../../shared/render.js";
+import { boundsOf, childrenByParent, computeLayout, type Box, type Layout } from "../../shared/tree.js";
 
 export const EXPORT_FORMATS = ["svg", "html", "jsx", "json", "summary"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -32,13 +33,33 @@ function cssClassName(node: DesignNode): string {
 }
 
 /**
- * Bloc de déclarations CSS d'un noeud. Les formes deviennent des div
- * positionnées en absolu : c'est ce que l'on veut coller dans une vraie app,
- * là où le SVG ne sert qu'à la prévisualisation.
+ * Position d'un élément **dans la div de son parent**.
+ *
+ * Un groupe est exporté comme une div positionnée sur la boîte englobante de son
+ * contenu ; ses enfants sont donc décalés de cette boîte, ce qui produit du HTML
+ * imbriqué directement réutilisable plutôt qu'une liste plate de coordonnées.
  */
-function nodeCss(node: DesignNode): string[] {
-  const box = normalizedBox(node as unknown as RenderNode);
+function offsetWithin(layout: Layout, node: DesignNode, parentBox: Box | null): { left: number; top: number } {
+  const box = boundsOf(layout, node.id);
+  return { left: box.x - (parentBox?.x ?? 0), top: box.y - (parentBox?.y ?? 0) };
+}
+
+function nodeCss(node: DesignNode, layout: Layout, parentBox: Box | null): string[] {
   const declarations: string[] = ["position: absolute"];
+  const offset = offsetWithin(layout, node, parentBox);
+
+  if (node.type === "group") {
+    const box = boundsOf(layout, node.id);
+    declarations.push(
+      `left: ${round(offset.left)}px`,
+      `top: ${round(offset.top)}px`,
+      `width: ${round(box.width)}px`,
+      `height: ${round(box.height)}px`
+    );
+    if (node.rotation) declarations.push(`transform: rotate(${round(node.rotation)}deg)`);
+    if (node.opacity < 1) declarations.push(`opacity: ${round(node.opacity)}`);
+    return declarations;
+  }
 
   if (node.type === "line") {
     // Une ligne se rend comme une barre pivotée autour de son point de départ :
@@ -46,9 +67,13 @@ function nodeCss(node: DesignNode): string[] {
     const length = Math.hypot(node.width, node.height);
     const angle = (Math.atan2(node.height, node.width) * 180) / Math.PI;
     const thickness = round(node.strokeWidth ?? 1);
+    const local = normalizedBox(node as unknown as RenderNode);
+    // offset porte sur la boîte normalisée ; le trait part de son extrémité d'origine.
+    const startLeft = offset.left + (node.x - local.x);
+    const startTop = offset.top + (node.y - local.y);
     declarations.push(
-      `left: ${round(node.x)}px`,
-      `top: ${round(node.y - thickness / 2)}px`,
+      `left: ${round(startLeft)}px`,
+      `top: ${round(startTop - thickness / 2)}px`,
       `width: ${round(length)}px`,
       `height: ${thickness}px`,
       `background: ${node.stroke ?? "#000000"}`,
@@ -56,9 +81,10 @@ function nodeCss(node: DesignNode): string[] {
       "transform-origin: 0 50%"
     );
   } else {
+    const box = boundsOf(layout, node.id);
     declarations.push(
-      `left: ${round(box.x)}px`,
-      `top: ${round(box.y)}px`,
+      `left: ${round(offset.left)}px`,
+      `top: ${round(offset.top)}px`,
       `width: ${round(box.width)}px`,
       `height: ${round(box.height)}px`
     );
@@ -98,20 +124,38 @@ function nodeCss(node: DesignNode): string[] {
   return declarations;
 }
 
-function toHtml(design: Design): string {
-  const rules = design.nodes
-    .map((node) => `.${cssClassName(node)} {\n${nodeCss(node).map((d) => `  ${d};`).join("\n")}\n}`)
-    .join("\n\n");
+interface WalkContext {
+  layout: Layout;
+  children: Map<string | null, DesignNode[]>;
+}
 
-  const body = design.nodes
-    .map((node) => {
+function contextOf(design: Design): WalkContext {
+  return { layout: computeLayout(toRenderNodes(design)), children: childrenByParent(design.nodes) };
+}
+
+function toHtml(design: Design): string {
+  const { layout, children } = contextOf(design);
+  const rules: string[] = [];
+
+  const walk = (nodes: DesignNode[], parentBox: Box | null, depth: number): string[] => {
+    const pad = "    ".repeat(depth + 1);
+    return nodes.flatMap((node) => {
+      rules.push(`.${cssClassName(node)} {\n${nodeCss(node, layout, parentBox).map((d) => `  ${d};`).join("\n")}\n}`);
       const cls = cssClassName(node);
-      if (node.type === "text") {
-        return `    <div class="${cls}">${escapeXml(node.text ?? "")}</div>`;
+
+      if (node.type === "group") {
+        return [
+          `${pad}<div class="${cls}">`,
+          ...walk(children.get(node.id) ?? [], boundsOf(layout, node.id), depth + 1),
+          `${pad}</div>`,
+        ];
       }
-      return `    <div class="${cls}"></div>`;
-    })
-    .join("\n");
+      if (node.type === "text") return [`${pad}<div class="${cls}">${escapeXml(node.text ?? "")}</div>`];
+      return [`${pad}<div class="${cls}"></div>`];
+    });
+  };
+
+  const body = walk(children.get(null) ?? [], null, 1).join("\n");
 
   return [
     "<!doctype html>",
@@ -123,6 +167,7 @@ function toHtml(design: Design): string {
     "    body { margin: 0; }",
     `    .design-root { position: relative; width: ${design.width}px; height: ${design.height}px; background: ${design.background}; overflow: hidden; }`,
     rules
+      .join("\n\n")
       .split("\n")
       .map((line) => (line ? `    ${line}` : ""))
       .join("\n"),
@@ -151,31 +196,44 @@ function toComponentName(name: string): string {
 }
 
 function toJsx(design: Design): string {
-  const componentName = toComponentName(design.name);
+  const { layout, children } = contextOf(design);
 
-  const elements = design.nodes
-    .map((node) => {
-      const style = nodeCss(node)
-        .map((declaration) => {
-          const separator = declaration.indexOf(":");
-          const property = declaration.slice(0, separator).trim();
-          const value = declaration.slice(separator + 1).trim();
-          return `${toCamelCase(property)}: ${JSON.stringify(value)}`;
-        })
-        .join(", ");
-      const comment = `{/* ${node.name} */}`;
-      if (node.type === "text") {
-        return `      ${comment}\n      <div style={{ ${style} }}>{${JSON.stringify(node.text ?? "")}}</div>`;
+  const styleOf = (node: DesignNode, parentBox: Box | null): string =>
+    nodeCss(node, layout, parentBox)
+      .map((declaration) => {
+        const separator = declaration.indexOf(":");
+        const property = declaration.slice(0, separator).trim();
+        const value = declaration.slice(separator + 1).trim();
+        return `${toCamelCase(property)}: ${JSON.stringify(value)}`;
+      })
+      .join(", ");
+
+  const walk = (nodes: DesignNode[], parentBox: Box | null, depth: number): string[] => {
+    const pad = "  ".repeat(depth + 3);
+    return nodes.flatMap((node) => {
+      const comment = `${pad}{/* ${node.name} */}`;
+      const style = styleOf(node, parentBox);
+
+      if (node.type === "group") {
+        return [
+          comment,
+          `${pad}<div style={{ ${style} }}>`,
+          ...walk(children.get(node.id) ?? [], boundsOf(layout, node.id), depth + 1),
+          `${pad}</div>`,
+        ];
       }
-      return `      ${comment}\n      <div style={{ ${style} }} />`;
-    })
-    .join("\n");
+      if (node.type === "text") {
+        return [comment, `${pad}<div style={{ ${style} }}>{${JSON.stringify(node.text ?? "")}}</div>`];
+      }
+      return [comment, `${pad}<div style={{ ${style} }} />`];
+    });
+  };
 
   return [
-    `export function ${componentName}() {`,
+    `export function ${toComponentName(design.name)}() {`,
     "  return (",
     `    <div style={{ position: "relative", width: ${design.width}, height: ${design.height}, background: ${JSON.stringify(design.background)}, overflow: "hidden" }}>`,
-    elements,
+    ...walk(children.get(null) ?? [], null, 0),
     "    </div>",
     "  );",
     "}",
@@ -185,33 +243,44 @@ function toJsx(design: Design): string {
 
 /** Inventaire textuel : ce que l'agent lit quand il veut comprendre sans parser du JSON. */
 export function toSummary(design: Design): string {
+  const { layout, children } = contextOf(design);
   const lines = [
     `# ${design.name} (${design.id})`,
     `Canvas: ${design.width}x${design.height}, background ${design.background}`,
     `Revision ${design.revision}, last edited by ${design.lastEditor} at ${design.updatedAt}`,
-    `Nodes: ${design.nodes.length} (listed bottom to top)`,
+    `Nodes: ${design.nodes.length} (listed bottom to top; indentation = grouping, coordinates are document-absolute)`,
     "",
   ];
-  for (const node of design.nodes) {
-    const box = normalizedBox(node as unknown as RenderNode);
-    const geometry = `${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)}`;
-    if (node.type === "text") {
-      const preview = textLines(node as unknown as RenderNode).join(" / ");
-      lines.push(
-        `- ${node.id} text "${node.name}" @ ${geometry} — ${node.fontSize}px/${node.fontWeight} ${node.color} — "${preview}"`
-      );
-    } else if (node.type === "line") {
-      lines.push(
-        `- ${node.id} line "${node.name}" from ${Math.round(node.x)},${Math.round(node.y)} to ` +
-          `${Math.round(node.x + node.width)},${Math.round(node.y + node.height)} — ${node.strokeWidth}px ${node.stroke}`
-      );
-    } else {
-      lines.push(
-        `- ${node.id} ${node.type} "${node.name}" @ ${geometry} — fill ${node.fill ?? "none"}, ` +
-          `stroke ${node.stroke ?? "none"}${node.radius ? `, radius ${node.radius}` : ""}`
-      );
+
+  const walk = (nodes: DesignNode[], depth: number) => {
+    const indent = "  ".repeat(depth);
+    for (const node of nodes) {
+      const box = boundsOf(layout, node.id);
+      const geometry = `${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)}`;
+
+      if (node.type === "group") {
+        const count = (children.get(node.id) ?? []).length;
+        lines.push(`${indent}- ${node.id} group "${node.name}" @ ${geometry} — ${count} child(ren)`);
+        walk(children.get(node.id) ?? [], depth + 1);
+      } else if (node.type === "text") {
+        const preview = textLines(node as unknown as RenderNode).join(" / ");
+        lines.push(
+          `${indent}- ${node.id} text "${node.name}" @ ${geometry} — ${node.fontSize}px/${node.fontWeight} ${node.color} — "${preview}"`
+        );
+      } else if (node.type === "line") {
+        lines.push(
+          `${indent}- ${node.id} line "${node.name}" @ ${geometry} — ${node.strokeWidth}px ${node.stroke}`
+        );
+      } else {
+        lines.push(
+          `${indent}- ${node.id} ${node.type} "${node.name}" @ ${geometry} — fill ${node.fill ?? "none"}, ` +
+            `stroke ${node.stroke ?? "none"}${node.radius ? `, radius ${node.radius}` : ""}`
+        );
+      }
     }
-  }
+  };
+
+  walk(children.get(null) ?? [], 0);
   return lines.join("\n");
 }
 

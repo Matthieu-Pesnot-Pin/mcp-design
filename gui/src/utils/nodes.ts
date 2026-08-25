@@ -1,15 +1,22 @@
 import { NODE_DEFAULTS, clampNodeSize, defaultNodeName, type NodeKind } from '@shared/node-defaults'
-import { normalizedBox } from '@shared/render'
+import { ancestorsOf, descendantIds, type Box } from '@shared/tree'
 import type { DesignNode } from '../types'
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
-/** Même forme d'identifiant que côté serveur, pour que rien ne distingue une forme dessinée d'une forme générée. */
-export function newNodeId(): string {
+function randomSuffix(): string {
   let out = ''
-  const bytes = crypto.getRandomValues(new Uint8Array(8))
-  for (const byte of bytes) out += ALPHABET[byte % ALPHABET.length]
-  return `n_${out}`
+  for (const byte of crypto.getRandomValues(new Uint8Array(8))) out += ALPHABET[byte % ALPHABET.length]
+  return out
+}
+
+/** Même forme d'identifiant que côté serveur : rien ne distingue une forme dessinée d'une forme générée. */
+export function newNodeId(): string {
+  return `n_${randomSuffix()}`
+}
+
+export function newGroupId(): string {
+  return `g_${randomSuffix()}`
 }
 
 /**
@@ -22,6 +29,7 @@ export function createNode(type: NodeKind, patch: Partial<Omit<DesignNode, 'id' 
     id: newNodeId(),
     type,
     name: defaultNodeName(type, index),
+    parentId: null,
     x: 0,
     y: 0,
     rotation: 0,
@@ -34,29 +42,36 @@ export function createNode(type: NodeKind, patch: Partial<Omit<DesignNode, 'id' 
   return { ...base, width: size.width, height: size.height }
 }
 
-/** Boîte englobante commune à plusieurs noeuds — sert au cadre de sélection multiple. */
-export function boundingBox(nodes: DesignNode[]): { x: number; y: number; width: number; height: number } | null {
-  if (nodes.length === 0) return null
+/**
+ * Copie un ensemble de noeuds avec tout leur contenu, en réattribuant les
+ * identifiants et en recâblant les liens parent/enfant sur les copies.
+ */
+export function cloneSubtrees(nodes: DesignNode[], rootIds: string[]): DesignNode[] {
+  const included = new Set(rootIds)
+  for (const id of rootIds) for (const descendant of descendantIds(nodes, id)) included.add(descendant)
 
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
+  const source = nodes.filter((node) => included.has(node.id))
+  const idMap = new Map(source.map((node) => [node.id, node.type === 'group' ? newGroupId() : newNodeId()]))
+  const roots = new Set(rootIds)
 
-  for (const node of nodes) {
-    const box = normalizedBox(node)
-    minX = Math.min(minX, box.x)
-    minY = Math.min(minY, box.y)
-    maxX = Math.max(maxX, box.x + box.width)
-    maxY = Math.max(maxY, box.y + box.height)
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+  return source.map((node) => ({
+    ...node,
+    id: idMap.get(node.id)!,
+    parentId: node.parentId !== null ? (idMap.get(node.parentId) ?? node.parentId) : null,
+    // Seuls les noeuds copiés au premier niveau sont décalés : les descendants
+    // sont exprimés dans l'espace de leur parent et suivent donc tout seuls.
+    x: node.x + (roots.has(node.id) ? 20 : 0),
+    y: node.y + (roots.has(node.id) ? 20 : 0),
+  }))
 }
 
-export function rectsIntersect(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number }
-): boolean {
+/** Retire les noeuds dont un ancêtre est déjà sélectionné, pour ne pas les déplacer deux fois. */
+export function withoutSelectedAncestors(nodes: DesignNode[], selectedIds: string[]): string[] {
+  const selected = new Set(selectedIds)
+  return selectedIds.filter((id) => !ancestorsOf(nodes, id).some((ancestor) => selected.has(ancestor.id)))
+}
+
+export function rectsIntersect(a: Box, b: Box): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 }
 

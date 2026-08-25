@@ -1,5 +1,6 @@
 import type { DesignStore } from "../core/design-store.js";
 import { DesignError } from "../core/node-factory.js";
+import { withDescendants } from "../core/hierarchy.js";
 import { requireString, textResult } from "./types.js";
 import type { MutationResult } from "./add-nodes.js";
 
@@ -17,13 +18,21 @@ export function deleteNodes(store: DesignStore, args: Record<string, unknown> | 
     throw new DesignError(`Node(s) not found in design "${id}": ${missing.join(", ")}.`);
   }
 
-  const toRemove = new Set(nodeIds.map((nodeId) => String(nodeId)));
+  // Supprimer un groupe emporte son contenu : le laisser derrière lui produirait
+  // des noeuds orphelins pointant vers un parent disparu.
+  const toRemove = withDescendants(current.nodes, nodeIds.map((nodeId) => String(nodeId)));
+  const nested = toRemove.size - nodeIds.length;
+
   const design = store.mutate(id, "agent", (draft) => {
     draft.nodes = draft.nodes.filter((n) => !toRemove.has(n.id));
   });
 
   return {
-    ...textResult(`Deleted ${toRemove.size} node(s) from "${design.name}". ${design.nodes.length} node(s) remaining.`),
+    ...textResult(
+      `Deleted ${toRemove.size} node(s) from "${design.name}"` +
+        `${nested > 0 ? ` (${nested} of them nested inside a deleted group)` : ""}. ` +
+        `${design.nodes.length} node(s) remaining.`
+    ),
     design,
   };
 }

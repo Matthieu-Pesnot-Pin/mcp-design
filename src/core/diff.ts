@@ -1,4 +1,8 @@
 import type { DesignNode } from "../../shared/schemas/design.schema.js";
+import { GROUP_DERIVED_FIELDS } from "../../shared/node-defaults.js";
+
+/** Champs recalculés automatiquement : les signaler serait du bruit, pas un changement de design. */
+const DERIVED_GROUP_FIELDS = new Set<string>(GROUP_DERIVED_FIELDS as readonly string[]);
 
 export interface NodeFieldChange {
   field: string;
@@ -42,6 +46,7 @@ export function diffNodes(before: DesignNode[], after: DesignNode[]): DesignDiff
     const changes: NodeFieldChange[] = [];
     for (const field of fields) {
       if (field === "id" || field === "type") continue;
+      if (node.type === "group" && DERIVED_GROUP_FIELDS.has(field)) continue;
       const a = (previous as Record<string, unknown>)[field];
       const b = (node as Record<string, unknown>)[field];
       if (!equalValues(a, b)) changes.push({ field, before: a, after: b });
@@ -66,8 +71,14 @@ export function countChanges(before: DesignNode[], after: DesignNode[]): number 
 
 function formatValue(value: unknown): string {
   if (value === undefined) return "—";
+  if (value === null) return "racine";
   if (typeof value === "number") return String(Math.round(value * 100) / 100);
   return JSON.stringify(value);
+}
+
+/** "dans le groupe X" plutôt qu'un identifiant nu, quand le noeud n'est pas à la racine. */
+function parentSuffix(node: { parentId: string | null }): string {
+  return node.parentId === null ? "" : ` in group ${node.parentId}`;
 }
 
 /** Résumé lisible du diff, destiné à être renvoyé tel quel à l'agent. */
@@ -77,10 +88,11 @@ export function formatDiff(diff: DesignDiff): string {
   if (diff.added.length > 0) {
     lines.push(`## Added (${diff.added.length})`);
     for (const node of diff.added) {
-      lines.push(
-        `- ${node.id} — "${node.name}" (${node.type}) at ${Math.round(node.x)},${Math.round(node.y)} ` +
-          `size ${Math.round(node.width)}x${Math.round(node.height)}`
-      );
+      const geometry =
+        node.type === "group"
+          ? `at ${Math.round(node.x)},${Math.round(node.y)}`
+          : `at ${Math.round(node.x)},${Math.round(node.y)} size ${Math.round(node.width)}x${Math.round(node.height)}`;
+      lines.push(`- ${node.id} — "${node.name}" (${node.type}) ${geometry}${parentSuffix(node)}`);
     }
     lines.push("");
   }

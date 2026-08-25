@@ -82,11 +82,13 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 |---|---|
 | `add_nodes` | Ajoute un ou plusieurs éléments par-dessus les autres. |
 | `update_nodes` | Patche des éléments existants — seuls les champs fournis changent. |
-| `delete_nodes` | Supprime des éléments par identifiant. |
+| `delete_nodes` | Supprime des éléments par identifiant. Supprimer un groupe emporte son contenu. |
+| `group_nodes` | Enveloppe des éléments dans un nouveau groupe, sans rien déplacer à l'écran. |
+| `ungroup_nodes` | Dissout des groupes : leur contenu remonte d'un niveau, toujours sans bouger. |
 
-Quatre types d'éléments : `rect`, `ellipse`, `line`, `text`. Seul `type` est obligatoire ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
+Cinq types d'éléments : `rect`, `ellipse`, `line`, `text` et `group`. Seul `type` est obligatoire ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
 
-**Champs communs** — `name`, `x`, `y`, `width`, `height` (en pixels, origine en haut à gauche), `rotation` (degrés, autour du centre de la boîte), `opacity` (0–1).
+**Champs communs** — `name`, `parentId`, `x`, `y`, `width`, `height` (en pixels, origine en haut à gauche), `rotation` (degrés, autour du centre de la boîte), `opacity` (0–1).
 
 | Type | Champs propres |
 |---|---|
@@ -94,6 +96,20 @@ Quatre types d'éléments : `rect`, `ellipse`, `line`, `text`. Seul `type` est o
 | `ellipse` | `fill`, `stroke`, `strokeWidth` |
 | `line` | `stroke`, `strokeWidth` — le trait va de `(x, y)` à `(x + width, y + height)`, donc les deltas négatifs encodent la direction |
 | `text` | `text`, `color`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`, `textAlign`, `lineHeight` |
+| `group` | aucun — c'est un pur conteneur |
+
+### Hiérarchie
+
+Chaque élément porte un `parentId` : `null` à la racine de la planche, sinon l'identifiant d'un `group`. **Les coordonnées sont exprimées dans l'espace du parent** : un élément à la racine se positionne par rapport à la planche, un élément dans un groupe par rapport à l'origine de ce groupe.
+
+C'est ce qui rend un déplacement de groupe lisible côté agent — un seul champ change, pas les coordonnées de chaque membre :
+
+```
+- g_a1b2c3 — "Carte produit" (group)
+    x: 100 -> 260
+```
+
+La taille d'un groupe est **déduite de son contenu** : `width` et `height` sont recalculés à chaque mutation, ne peuvent pas être écrits, et n'apparaissent jamais dans un diff. Le stockage reste une liste plate, ordonnée en parcours préfixe — chaque parent suivi de son sous-arbre — ce qui garde le fichier JSON lisible et diffable.
 
 Le texte n'est **jamais re-wrappé automatiquement** : seuls les `\n` explicites créent une nouvelle ligne. Le comportement est ainsi identique à l'écran et à l'export.
 
@@ -140,11 +156,18 @@ Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 
 - **Outils** — sélection, rectangle, ellipse, ligne, texte. Glisser pour dimensionner, cliquer pour poser à la taille par défaut.
 - **Édition** — déplacement au glisser, 8 poignées de redimensionnement (2 extrémités pour une ligne), sélection multiple au rectangle d'encadrement ou au Maj+clic.
+- **Groupes** — `Ctrl+G` groupe la sélection, `Ctrl+Maj+G` la dissout. Un clic dans le canvas sélectionne le **groupe le plus haut** ; `Alt+clic` vise l'élément exact à l'intérieur. Déplacer un groupe déplace tout son contenu.
 - **Texte** — double-clic pour éditer en place, avec la même métrique qu'au rendu final.
-- **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne, alignement.
-- **Calques** — ordre d'empilement, sélection, montée/descente d'un cran.
+- **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne, alignement. Pour un groupe, la taille est affichée en lecture seule puisqu'elle suit son contenu.
+- **Calques** — arbre repliable, ordre d'empilement, sélection, montée/descente d'un cran.
 
-Raccourcis : `V` `R` `O` `L` `T` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rétablir), `Ctrl+D` (dupliquer), `Ctrl+A` (tout sélectionner), `Suppr`, flèches (déplacer d'1 px, 10 px avec `Maj`), `Échap`.
+### Naviguer dans la planche
+
+- **Zoom** : `Ctrl`/`Cmd` + molette, ancré sous le curseur — le point visé ne bouge pas.
+- **Déplacement** : molette seule, ou **barre espace maintenue + glisser**. Tant que la barre espace est enfoncée, aucun geste ne peut déplacer un élément, même en partant de l'un d'eux. Le clic molette fait la même chose.
+- Le sélecteur de zoom de la barre d'outils reste disponible pour revenir à une valeur ronde.
+
+Raccourcis : `V` `R` `O` `L` `T` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rétablir), `Ctrl+G` / `Ctrl+Maj+G` (grouper / dissoudre), `Ctrl+D` (dupliquer), `Ctrl+A` (tout sélectionner), `Suppr`, flèches (déplacer d'1 px, 10 px avec `Maj`), `Échap`.
 
 La sauvegarde est automatique et différée. Une modification faite par l'agent pendant que la GUI est ouverte y apparaît en direct, via SSE ; une modification faite dans la GUI est enregistrée comme venant de l'utilisateur, et c'est ce que `get_changes` restitue.
 
@@ -161,7 +184,11 @@ Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-in
 
 Les deux communiquent par IPC. Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
 
-`shared/render.ts` contient le rendu SVG d'un élément et `shared/node-defaults.ts` ses valeurs par défaut. Les deux sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` produit.
+`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, et `shared/node-defaults.ts` les valeurs par défaut. Les trois sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` produit.
+
+Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle, taille des groupes recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
+
+**Limite assumée de cette version** : un groupe se déplace, se pivote et change d'opacité, mais ne se redimensionne pas — mettre son contenu à l'échelle demanderait de propager un facteur dans tout le sous-arbre, ce qui dépasse le cadre d'un premier jet sobre.
 
 ---
 

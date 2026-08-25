@@ -73,6 +73,8 @@ export function Inspector() {
   const deleteSelected = useDesignStore((state) => state.deleteSelected)
   const duplicateSelected = useDesignStore((state) => state.duplicateSelected)
   const reorderSelected = useDesignStore((state) => state.reorderSelected)
+  const groupSelected = useDesignStore((state) => state.groupSelected)
+  const ungroupSelected = useDesignStore((state) => state.ungroupSelected)
 
   if (!design) return null
 
@@ -126,10 +128,25 @@ export function Inspector() {
         <NumberField label="X" value={first.x} onChange={(x) => patch({ x })} />
         <NumberField label="Y" value={first.y} onChange={(y) => patch({ y })} />
       </div>
-      <div className="field-row">
-        <NumberField label="L" value={first.width} onChange={(width) => patch({ width })} />
-        <NumberField label="H" value={first.height} onChange={(height) => patch({ height })} />
-      </div>
+      {uniformType === 'group' ? (
+        // La taille d'un groupe suit son contenu : l'afficher en lecture seule
+        // évite de laisser croire qu'on peut la forcer.
+        <div className="field-row">
+          <label className="field">
+            <span>L</span>
+            <input value={Math.round(first.width)} readOnly title="Déduit du contenu du groupe" />
+          </label>
+          <label className="field">
+            <span>H</span>
+            <input value={Math.round(first.height)} readOnly title="Déduit du contenu du groupe" />
+          </label>
+        </div>
+      ) : (
+        <div className="field-row">
+          <NumberField label="L" value={first.width} onChange={(width) => patch({ width })} />
+          <NumberField label="H" value={first.height} onChange={(height) => patch({ height })} />
+        </div>
+      )}
       <div className="field-row">
         <NumberField label="Rotation" value={first.rotation} onChange={(rotation) => patch({ rotation })} />
         <NumberField
@@ -142,7 +159,7 @@ export function Inspector() {
         />
       </div>
 
-      {uniformType && uniformType !== 'line' && uniformType !== 'text' && (
+      {uniformType && uniformType !== 'line' && uniformType !== 'text' && uniformType !== 'group' && (
         <>
           <ColorField label="Remplissage" value={first.fill} onChange={(fill) => patch({ fill })} />
           <ColorField label="Contour" value={first.stroke} onChange={(stroke) => patch({ stroke })} />
@@ -244,6 +261,15 @@ export function Inspector() {
       )}
 
       <div className="inspector-actions">
+        {uniformType === 'group' ? (
+          <button type="button" onClick={ungroupSelected} title="Dissoudre le groupe (Ctrl+Maj+G)">
+            Dissoudre
+          </button>
+        ) : (
+          <button type="button" onClick={groupSelected} title="Grouper la sélection (Ctrl+G)">
+            Grouper
+          </button>
+        )}
         <button type="button" onClick={() => reorderSelected('front')} title="Mettre au premier plan">
           Devant
         </button>

@@ -181,9 +181,11 @@ test("the server advertises every design tool", async (t) => {
     "export_design",
     "get_changes",
     "get_design",
+    "group_nodes",
     "list_designs",
     "mark_synced",
     "reconnect_gui",
+    "ungroup_nodes",
     "update_design",
     "update_nodes",
   ]);
@@ -290,6 +292,42 @@ test("a design created from the GUI is visible to the agent", async (t) => {
   const deleted = await fetch(`${guiUrl}/api/designs/depuis-la-gui`, { method: "DELETE" });
   assert.equal(deleted.status, 200);
   assert.doesNotMatch(await client!.callTool("list_designs"), /depuis-la-gui/);
+});
+
+test("grouping survives the round trip through the GUI API", async (t) => {
+  if (skipUnlessAvailable(t)) return;
+
+  await client!.callTool("group_nodes", { design_id: "e2e-board", node_ids: ["card", "title"], group_id: "hero" });
+  await client!.callTool("mark_synced", { design_id: "e2e-board" });
+
+  const design = await (await fetch(`${guiUrl}/api/designs/e2e-board`)).json();
+  const group = design.nodes.find((node: { id: string }) => node.id === "hero");
+  assert.equal(group.type, "group");
+  assert.equal(design.nodes.find((node: { id: string }) => node.id === "card").parentId, "hero");
+
+  // L'utilisateur déplace le groupe dans la GUI : un seul champ doit changer.
+  const nodes = design.nodes.map((node: { id: string; x: number }) =>
+    node.id === "hero" ? { ...node, x: node.x + 60 } : node
+  );
+  const saved = await fetch(`${guiUrl}/api/designs/e2e-board`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nodes }),
+  });
+  assert.equal(saved.status, 200);
+
+  const changes = await client!.callTool("get_changes", { design_id: "e2e-board" });
+  assert.match(changes, /## Updated \(1\)/, "moving a group must not restate every child");
+  assert.match(changes, /hero/);
+
+  // L'export imbrique le groupe et garde son contenu en coordonnées locales.
+  assert.match(await client!.callTool("export_design", { design_id: "e2e-board", format: "svg" }), /<g transform="translate\(/);
+
+  await client!.callTool("ungroup_nodes", { design_id: "e2e-board", group_ids: ["hero"] });
+  const flat = await (await fetch(`${guiUrl}/api/designs/e2e-board`)).json();
+  assert.equal(flat.nodes.find((node: { id: string }) => node.id === "hero"), undefined);
+  assert.equal(flat.nodes.find((node: { id: string }) => node.id === "card").parentId, null);
+  await client!.callTool("mark_synced", { design_id: "e2e-board" });
 });
 
 test("the GUI API reports errors instead of failing silently", async (t) => {

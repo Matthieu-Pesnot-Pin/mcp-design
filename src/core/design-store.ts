@@ -7,6 +7,7 @@ import {
   type DesignSummary,
 } from "../../shared/schemas/design.schema.js";
 import { DesignError } from "./node-factory.js";
+import { normalizeHierarchy } from "./hierarchy.js";
 import { shortId, slugify } from "./ids.js";
 import { countChanges } from "./diff.js";
 
@@ -160,6 +161,9 @@ export class DesignStore {
     const current = this.get(id);
     const draft: Design = structuredClone(current);
     fn(draft);
+    // Les invariants de hiérarchie sont vérifiés ici, une seule fois : aucun
+    // appelant — outil MCP ou sauvegarde depuis la GUI — ne peut les contourner.
+    draft.nodes = normalizeHierarchy(draft.nodes);
     draft.revision = current.revision + 1;
     draft.updatedAt = new Date().toISOString();
     draft.lastEditor = editor;

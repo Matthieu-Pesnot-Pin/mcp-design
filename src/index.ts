@@ -21,6 +21,8 @@ import { deleteDesign } from "./tools/delete-design.js";
 import { addNodes } from "./tools/add-nodes.js";
 import { updateNodes } from "./tools/update-nodes.js";
 import { deleteNodes } from "./tools/delete-nodes.js";
+import { groupNodes } from "./tools/group-nodes.js";
+import { ungroupNodes } from "./tools/ungroup-nodes.js";
 import { getChanges } from "./tools/get-changes.js";
 import { markSynced } from "./tools/mark-synced.js";
 import { exportDesignTool } from "./tools/export-design.js";
@@ -316,7 +318,10 @@ function guiHint(designId: string): string {
 // --- Déclaration des outils -------------------------------------------------
 
 const NODE_FIELDS_DOC =
-  "Common fields: name, x, y, width, height (top-left based, pixels), rotation (degrees, around the bounding-box center), opacity (0-1). " +
+  "Common fields: name, parentId, x, y, width, height (top-left based, pixels), rotation (degrees, around the bounding-box center), opacity (0-1). " +
+  "Coordinates are expressed in the parent's space: a node with parentId null is positioned against the artboard, a node inside a group is positioned against that group's origin. " +
+  "Set parentId to the id of a group node to nest an element, or to null to move it back to the root. " +
+  "A \"group\" node is a pure container: it accepts name, parentId, x, y, rotation and opacity, but its width and height are derived from its content and cannot be set. " +
   `Shape fields (rect, ellipse): fill, stroke, strokeWidth; rect also accepts radius. ` +
   "Line fields: stroke, strokeWidth — the line goes from (x, y) to (x + width, y + height). " +
   "Text fields: text (use \\n for explicit line breaks — text is never auto-wrapped), color, fontSize, fontFamily, fontWeight, fontStyle (normal|italic), textAlign (left|center|right), lineHeight. " +
@@ -400,9 +405,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["rect", "ellipse", "line", "text"], description: "Kind of node." },
+                type: { type: "string", enum: ["rect", "ellipse", "line", "text", "group"], description: "Kind of node." },
                 id: { type: "string", description: "Optional explicit id. Generated when omitted." },
                 name: { type: "string", description: "Layer name shown in the GUI." },
+                parentId: { type: ["string", "null"], description: "Id of the containing group, or null for the root level." },
                 x: { type: "number" },
                 y: { type: "number" },
                 width: { type: "number" },
@@ -452,7 +458,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "delete_nodes",
-      description: "Remove nodes from a design by id.",
+      description: "Remove nodes from a design by id. Deleting a group also deletes everything inside it.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -460,6 +466,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           node_ids: { type: "array", items: { type: "string" }, description: "Ids of the nodes to delete.", minItems: 1 },
         },
         required: ["design_id", "node_ids"],
+      },
+    },
+    {
+      name: "group_nodes",
+      description:
+        "Wrap existing nodes into a new group, so they can be moved, hidden or reordered together. The nodes must currently share the same parent, and nothing moves on screen: their coordinates are rebased onto the new group.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          node_ids: { type: "array", items: { type: "string" }, description: "Ids of the nodes to group together.", minItems: 1 },
+          name: { type: "string", description: "Name of the new group (default \"Groupe\")." },
+          group_id: { type: "string", description: "Optional explicit id for the group. Generated when omitted." },
+        },
+        required: ["design_id", "node_ids"],
+      },
+    },
+    {
+      name: "ungroup_nodes",
+      description:
+        "Dissolve groups: their content moves up one level, keeping its position on screen. The groups themselves are removed.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          group_ids: { type: "array", items: { type: "string" }, description: "Ids of the groups to dissolve.", minItems: 1 },
+        },
+        required: ["design_id", "group_ids"],
       },
     },
     {
@@ -552,6 +586,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "delete_nodes": {
         const result = deleteNodes(store, params);
+        notifyDesignChanged(result.design!.id);
+        return result;
+      }
+
+      case "group_nodes": {
+        const result = groupNodes(store, params);
+        notifyDesignChanged(result.design!.id);
+        return result;
+      }
+
+      case "ungroup_nodes": {
+        const result = ungroupNodes(store, params);
         notifyDesignChanged(result.design!.id);
         return result;
       }

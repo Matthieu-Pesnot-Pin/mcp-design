@@ -7,10 +7,19 @@
  * importable depuis le bundle GUI.
  */
 
+import { boundsOf, childrenByParent, computeLayout, normalizedBox } from "./tree.js";
+
+// La géométrie de base vit dans tree.ts (module bas-niveau, sans dépendance vers
+// celui-ci) ; elle reste exposée ici pour tous les appelants existants.
+export { normalizedBox };
+export type { Box, Point } from "./tree.js";
+
 export interface RenderNode {
   id: string;
-  type: "rect" | "ellipse" | "line" | "text";
+  type: "rect" | "ellipse" | "line" | "text" | "group";
   name: string;
+  /** Groupe conteneur, ou null a la racine. Les coordonnees sont relatives a ce parent. */
+  parentId: string | null;
   x: number;
   y: number;
   width: number;
@@ -42,13 +51,6 @@ export function escapeXml(value: string): string {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
-}
-
-/** Boîte englobante normalisée (largeur/hauteur toujours positives). */
-export function normalizedBox(node: RenderNode) {
-  const x = node.width < 0 ? node.x + node.width : node.x;
-  const y = node.height < 0 ? node.y + node.height : node.y;
-  return { x, y, width: Math.abs(node.width), height: Math.abs(node.height) };
 }
 
 export function nodeCenter(node: RenderNode): { cx: number; cy: number } {
@@ -110,8 +112,24 @@ function shapeAttributes(node: RenderNode): string {
   return parts.join(" ");
 }
 
-/** Markup SVG d'un seul noeud, sans wrapper — utilisé par l'export et par le canvas. */
+/**
+ * Transform SVG d'un groupe : translation vers son origine, puis rotation
+ * autour du centre de son contenu (exprime dans l'espace local du groupe).
+ */
+export function groupTransform(node: RenderNode, localCenter: { cx: number; cy: number }): string {
+  const parts = [`translate(${round(node.x)} ${round(node.y)})`];
+  if (node.rotation) parts.push(`rotate(${round(node.rotation)} ${round(localCenter.cx)} ${round(localCenter.cy)})`);
+  return parts.join(" ");
+}
+
+/**
+ * Markup SVG d'un seul noeud, sans wrapper — utilisé par l'export et par le canvas.
+ * Un groupe ne produit rien par lui-meme : c'est un conteneur, rendu par
+ * `documentToSvg` (serveur) ou par le canvas (navigateur).
+ */
 export function nodeToSvg(node: RenderNode): string {
+  if (node.type === "group") return "";
+
   const transform = rotationTransform(node);
   const transformAttr = transform ? ` transform="${transform}"` : "";
   const opacityAttr = node.opacity >= 1 ? "" : ` opacity="${round(node.opacity)}"`;
@@ -168,7 +186,30 @@ export interface RenderDocument {
 }
 
 export function documentToSvg(doc: RenderDocument): string {
-  const body = doc.nodes.map((node) => `  ${nodeToSvg(node)}`).join("\n");
+  const layout = computeLayout(doc.nodes);
+  const children = childrenByParent(doc.nodes);
+
+  // Un groupe devient un <g> : ses enfants gardent leurs coordonnées locales,
+  // c'est la transformation du conteneur qui les place.
+  const renderNodes = (nodes: RenderNode[], depth: number): string[] => {
+    const pad = "  ".repeat(depth + 1);
+    return nodes.flatMap((node) => {
+      if (node.type !== "group") return [`${pad}${nodeToSvg(node)}`];
+
+      const bounds = boundsOf(layout, node.id);
+      const origin = layout.origin.get(node.id) ?? { x: 0, y: 0 };
+      const center = { cx: bounds.x + bounds.width / 2 - origin.x, cy: bounds.y + bounds.height / 2 - origin.y };
+      const opacity = node.opacity >= 1 ? "" : ` opacity="${round(node.opacity)}"`;
+
+      return [
+        `${pad}<g transform="${groupTransform(node, center)}"${opacity}>`,
+        ...renderNodes(children.get(node.id) ?? [], depth + 1),
+        `${pad}</g>`,
+      ];
+    });
+  };
+
+  const body = renderNodes(children.get(null) ?? [], 0).join("\n");
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" ` +
     `viewBox="0 0 ${doc.width} ${doc.height}">\n` +

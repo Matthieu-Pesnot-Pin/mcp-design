@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { nodeToSvg, normalizedBox, textMetrics } from '@shared/render'
-import { useDesignStore } from '../store/useDesignStore'
-import { boundingBox, rectsIntersect, round } from '../utils/nodes'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { groupTransform, nodeToSvg, normalizedBox, textMetrics } from '@shared/render'
+import { boundsOf, childrenByParent, computeLayout, spaceOriginOf, unionBoundsOf, type Box, type Layout } from '@shared/tree'
+import { clickTarget, useDesignStore } from '../store/useDesignStore'
+import { rectsIntersect, round } from '../utils/nodes'
 import type { DesignNode, Tool } from '../types'
 
 type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'start' | 'end'
-
-interface Box {
-  x: number
-  y: number
-  width: number
-  height: number
-}
 
 interface Point {
   x: number
@@ -24,6 +18,7 @@ type Gesture =
   | { kind: 'move'; origin: Point; startNodes: DesignNode[] }
   | { kind: 'resize'; handle: HandleId; origin: Point; startNode: DesignNode }
   | { kind: 'marquee'; origin: Point; point: Point }
+  | { kind: 'pan'; clientX: number; clientY: number; panX: number; panY: number }
 
 const HANDLES: Array<{ id: HandleId; cursor: string; fx: number; fy: number }> = [
   { id: 'nw', cursor: 'nwse-resize', fx: 0, fy: 0 },
@@ -87,33 +82,96 @@ export function Canvas() {
   const design = useDesignStore((state) => state.design)
   const tool = useDesignStore((state) => state.tool)
   const zoom = useDesignStore((state) => state.zoom)
+  const pan = useDesignStore((state) => state.pan)
+  const panMode = useDesignStore((state) => state.panMode)
   const selectedIds = useDesignStore((state) => state.selectedIds)
   const editingTextId = useDesignStore((state) => state.editingTextId)
 
+  const viewportRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture>({ kind: 'none' })
   // Incrémenté à chaque début de geste : c'est ce qui (re)monte les écouteurs globaux.
   const [gestureTick, setGestureTick] = useState(0)
   const [rubberBand, setRubberBand] = useState<{ kind: 'create' | 'marquee'; box: Box } | null>(null)
 
+  const nodes = useMemo(() => design?.nodes ?? [], [design])
+  const layout = useMemo(() => computeLayout(nodes), [nodes])
+  const children = useMemo(() => childrenByParent(nodes), [nodes])
+
   /** Coordonnées document à partir d'un évènement pointeur, quel que soit le zoom. */
   const toDesignPoint = useCallback(
     (event: { clientX: number; clientY: number }): Point => {
-      const rect = surfaceRef.current?.getBoundingClientRect()
+      const rect = viewportRef.current?.getBoundingClientRect()
       if (!rect) return { x: 0, y: 0 }
-      return { x: (event.clientX - rect.left) / zoom, y: (event.clientY - rect.top) / zoom }
+      return { x: (event.clientX - rect.left - pan.x) / zoom, y: (event.clientY - rect.top - pan.y) / zoom }
     },
-    [zoom]
+    [pan.x, pan.y, zoom]
   )
+
+  // --- Zoom et déplacement à la molette -------------------------------------
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    // React attache `onWheel` en passif : preventDefault n'y ferait rien, et le
+    // navigateur zoomerait la page entière. D'où l'écouteur natif non passif.
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+
+      const state = useDesignStore.getState()
+      const rect = viewport.getBoundingClientRect()
+
+      if (event.ctrlKey || event.metaKey) {
+        // Exponentiel : un cran de molette produit le même ratio à tous les niveaux de zoom.
+        state.zoomAround(state.zoom * Math.exp(-event.deltaY * 0.0015), {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        })
+        return
+      }
+
+      // Molette seule : la vue défile, comme dans n'importe quel canvas.
+      state.setPan({ x: state.pan.x - event.deltaX, y: state.pan.y - event.deltaY })
+    }
+
+    viewport.addEventListener('wheel', onWheel, { passive: false })
+    return () => viewport.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Au premier affichage d'une planche, on la centre dans la vue.
+  const centeredFor = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!design || !viewport || centeredFor.current === design.id) return
+    centeredFor.current = design.id
+
+    const rect = viewport.getBoundingClientRect()
+    const state = useDesignStore.getState()
+    state.setPan({
+      x: Math.max(32, (rect.width - design.width * state.zoom) / 2),
+      y: Math.max(32, (rect.height - design.height * state.zoom) / 2),
+    })
+  }, [design])
+
+  // --- Gestes ---------------------------------------------------------------
 
   useEffect(() => {
     if (gestureRef.current.kind === 'none') return
 
     const handleMove = (event: PointerEvent) => {
       const gesture = gestureRef.current
-      const point = toDesignPoint(event)
       const store = useDesignStore.getState()
 
+      if (gesture.kind === 'pan') {
+        store.setPan({
+          x: gesture.panX + (event.clientX - gesture.clientX),
+          y: gesture.panY + (event.clientY - gesture.clientY),
+        })
+        return
+      }
+
+      const point = toDesignPoint(event)
       if (gesture.kind === 'create') {
         gesture.point = point
         setRubberBand({ kind: 'create', box: boxFromPoints(gesture.origin, point) })
@@ -121,20 +179,9 @@ export function Canvas() {
         gesture.point = point
         setRubberBand({ kind: 'marquee', box: boxFromPoints(gesture.origin, point) })
       } else if (gesture.kind === 'move') {
-        const dx = point.x - gesture.origin.x
-        const dy = point.y - gesture.origin.y
-        const moved = new Map(
-          gesture.startNodes.map((node) => [node.id, { x: round(node.x + dx), y: round(node.y + dy) }])
-        )
-        const current = store.design
-        if (!current) return
-        store.replaceNodes(
-          current.nodes.map((node) => {
-            const position = moved.get(node.id)
-            return position ? { ...node, ...position } : node
-          }),
-          { history: false }
-        )
+        store.moveSelection(round(point.x - gesture.origin.x), round(point.y - gesture.origin.y), gesture.startNodes, {
+          history: false,
+        })
       } else if (gesture.kind === 'resize') {
         const dx = point.x - gesture.origin.x
         const dy = point.y - gesture.origin.y
@@ -174,7 +221,11 @@ export function Canvas() {
         }
       } else if (gesture.kind === 'marquee') {
         const box = boxFromPoints(gesture.origin, gesture.point)
-        const hits = (store.design?.nodes ?? []).filter((node) => rectsIntersect(normalizedBox(node), box))
+        // Le rectangle de sélection attrape les éléments de premier niveau :
+        // un groupe est pris en entier, pas éclaté en ses membres.
+        const hits = (store.design?.nodes ?? [])
+          .filter((node) => node.parentId === null)
+          .filter((node) => rectsIntersect(boundsOf(layout, node.id), box))
         store.setSelection(hits.map((node) => node.id))
       }
 
@@ -188,24 +239,34 @@ export function Canvas() {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
-  }, [gestureTick, toDesignPoint])
+  }, [gestureTick, toDesignPoint, layout])
 
   if (!design) return null
 
-  const selected = design.nodes.filter((node) => selectedIds.includes(node.id))
-  const selectionBox = boundingBox(selected)
-  const singleSelection = selected.length === 1 ? selected[0] : null
-  const editingNode = editingTextId ? design.nodes.find((node) => node.id === editingTextId) : undefined
+  const selectionBox = unionBoundsOf(layout, selectedIds)
+  const singleSelection = selectedIds.length === 1 ? nodes.find((node) => node.id === selectedIds[0]) : undefined
+  const resizable = singleSelection && singleSelection.type !== 'group' ? singleSelection : undefined
+  const editingNode = editingTextId ? nodes.find((node) => node.id === editingTextId) : undefined
 
   const beginGesture = (gesture: Gesture) => {
     gestureRef.current = gesture
     setGestureTick((tick) => tick + 1)
   }
 
-  const startSurfaceGesture = (event: React.PointerEvent) => {
-    if (event.button !== 0) return
-    const point = toDesignPoint(event)
+  const beginPan = (event: React.PointerEvent) => {
+    beginGesture({ kind: 'pan', clientX: event.clientX, clientY: event.clientY, panX: pan.x, panY: pan.y })
+    event.preventDefault()
+  }
 
+  const startSurfaceGesture = (event: React.PointerEvent) => {
+    // Espace maintenu ou clic molette : on déplace la vue, jamais le contenu.
+    if (panMode || event.button === 1) {
+      beginPan(event)
+      return
+    }
+    if (event.button !== 0) return
+
+    const point = toDesignPoint(event)
     if (tool === 'select') {
       useDesignStore.getState().setSelection([])
       beginGesture({ kind: 'marquee', origin: point, point })
@@ -216,36 +277,38 @@ export function Canvas() {
   }
 
   const startNodeGesture = (event: React.PointerEvent, node: DesignNode) => {
+    if (panMode || event.button === 1) {
+      beginPan(event)
+      return
+    }
     if (event.button !== 0 || tool !== 'select') return
     event.stopPropagation()
 
     const store = useDesignStore.getState()
+    // Alt+clic vise l'élément exact ; sinon on sélectionne son groupe le plus haut.
+    const targetId = clickTarget(nodes, node.id, event.altKey)
+
     if (event.shiftKey) {
-      store.toggleSelection(node.id)
+      store.toggleSelection(targetId)
       return
     }
 
-    const alreadySelected = store.selectedIds.includes(node.id)
-    if (!alreadySelected) store.setSelection([node.id])
+    const alreadySelected = store.selectedIds.includes(targetId)
+    if (!alreadySelected) store.setSelection([targetId])
 
-    const ids = alreadySelected ? store.selectedIds : [node.id]
-    const startNodes = (store.design?.nodes ?? []).filter((candidate) => ids.includes(candidate.id))
+    const ids = alreadySelected ? store.selectedIds : [targetId]
+    const startNodes = nodes.filter((candidate) => ids.includes(candidate.id))
 
     store.beginHistory()
     beginGesture({ kind: 'move', origin: toDesignPoint(event), startNodes: structuredClone(startNodes) })
   }
 
   const startResize = (event: React.PointerEvent, handle: HandleId) => {
-    if (event.button !== 0 || !singleSelection) return
+    if (event.button !== 0 || !resizable) return
     event.stopPropagation()
 
     useDesignStore.getState().beginHistory()
-    beginGesture({
-      kind: 'resize',
-      handle,
-      origin: toDesignPoint(event),
-      startNode: structuredClone(singleSelection),
-    })
+    beginGesture({ kind: 'resize', handle, origin: toDesignPoint(event), startNode: structuredClone(resizable) })
   }
 
   const commitText = (value: string) => {
@@ -254,9 +317,62 @@ export function Canvas() {
     store.setEditingText(null)
   }
 
+  /** Rend récursivement l'arbre : un groupe devient un <g> transformé. */
+  const renderNodes = (list: DesignNode[]): React.ReactNode[] =>
+    list.map((node) => {
+      if (node.type === 'group') {
+        const bounds = boundsOf(layout, node.id)
+        const origin = layout.origin.get(node.id) ?? { x: 0, y: 0 }
+        const center = { cx: bounds.x + bounds.width / 2 - origin.x, cy: bounds.y + bounds.height / 2 - origin.y }
+        return (
+          <g
+            key={node.id}
+            className="canvas-group"
+            transform={groupTransform(node, center)}
+            opacity={node.opacity >= 1 ? undefined : node.opacity}
+          >
+            {renderNodes(children.get(node.id) ?? [])}
+          </g>
+        )
+      }
+
+      return (
+        <g
+          key={node.id}
+          className="canvas-node"
+          data-hidden={node.id === editingTextId || undefined}
+          onPointerDown={(event) => startNodeGesture(event, node)}
+          onDoubleClick={(event) => {
+            if (node.type !== 'text') return
+            event.stopPropagation()
+            useDesignStore.getState().setSelection([node.id])
+            useDesignStore.getState().setEditingText(node.id)
+          }}
+          dangerouslySetInnerHTML={{ __html: nodeToSvg(node) }}
+        />
+      )
+    })
+
   return (
-    <div className="canvas-scroll">
-      <div className="canvas-stage" style={{ width: design.width * zoom, height: design.height * zoom }}>
+    <div
+      ref={viewportRef}
+      className="canvas-viewport"
+      data-pan={panMode || undefined}
+      onPointerDown={(event) => {
+        // Clic dans le vide autour de la planche : désélectionne, ou déplace la
+        // vue quand la barre espace est maintenue.
+        if (panMode || event.button === 1) beginPan(event)
+        else if (event.button === 0) useDesignStore.getState().setSelection([])
+      }}
+    >
+      <div
+        className="canvas-stage"
+        style={{
+          width: design.width * zoom,
+          height: design.height * zoom,
+          transform: `translate(${pan.x}px, ${pan.y}px)`,
+        }}
+      >
         <div
           ref={surfaceRef}
           className="canvas-surface"
@@ -275,20 +391,7 @@ export function Canvas() {
             height={design.height}
             viewBox={`0 0 ${design.width} ${design.height}`}
           >
-            {design.nodes.map((node) => (
-              <g
-                key={node.id}
-                className="canvas-node"
-                data-hidden={node.id === editingTextId || undefined}
-                onPointerDown={(event) => startNodeGesture(event, node)}
-                onDoubleClick={(event) => {
-                  if (node.type !== 'text') return
-                  event.stopPropagation()
-                  useDesignStore.getState().setEditingText(node.id)
-                }}
-                dangerouslySetInnerHTML={{ __html: nodeToSvg(node) }}
-              />
-            ))}
+            {renderNodes(children.get(null) ?? [])}
 
             {selectionBox && (
               <rect
@@ -319,45 +422,66 @@ export function Canvas() {
           coordonnées sont donc multipliées par le zoom, mais leur taille à
           l'écran reste constante.
         */}
-        {singleSelection?.type === 'line' && (
-            <>
-              <ResizeHandle
-                cursor="move"
-                left={singleSelection.x * zoom}
-                top={singleSelection.y * zoom}
-                onPointerDown={(event) => startResize(event, 'start')}
-              />
-              <ResizeHandle
-                cursor="move"
-                left={(singleSelection.x + singleSelection.width) * zoom}
-                top={(singleSelection.y + singleSelection.height) * zoom}
-                onPointerDown={(event) => startResize(event, 'end')}
-              />
-            </>
-          )}
+        {!panMode && resizable && <ResizeHandles node={resizable} layout={layout} zoom={zoom} onStart={startResize} />}
 
-          {singleSelection &&
-            singleSelection.type !== 'line' &&
-            HANDLES.map((handle) => {
-              const box = normalizedBox(singleSelection)
-              return (
-                <ResizeHandle
-                  key={handle.id}
-                  cursor={handle.cursor}
-                  left={(box.x + box.width * handle.fx) * zoom}
-                  top={(box.y + box.height * handle.fy) * zoom}
-                  onPointerDown={(event) => startResize(event, handle.id)}
-                />
-              )
-            })}
-
-        {editingNode?.type === 'text' && <TextEditor node={editingNode} zoom={zoom} onCommit={commitText} />}
+        {editingNode?.type === 'text' && (
+          <TextEditor node={editingNode} box={boundsOf(layout, editingNode.id)} zoom={zoom} onCommit={commitText} />
+        )}
       </div>
     </div>
   )
 }
 
-function ResizeHandle({
+function ResizeHandles({
+  node,
+  layout,
+  zoom,
+  onStart,
+}: {
+  node: DesignNode
+  layout: Layout
+  zoom: number
+  onStart: (event: React.PointerEvent, handle: HandleId) => void
+}) {
+  const box = boundsOf(layout, node.id)
+
+  if (node.type === 'line') {
+    // Une ligne se manipule par ses deux extrémités, pas par une boîte.
+    const origin = spaceOriginOf(layout, node.parentId)
+    return (
+      <>
+        <Handle
+          cursor="move"
+          left={(origin.x + node.x) * zoom}
+          top={(origin.y + node.y) * zoom}
+          onPointerDown={(event) => onStart(event, 'start')}
+        />
+        <Handle
+          cursor="move"
+          left={(origin.x + node.x + node.width) * zoom}
+          top={(origin.y + node.y + node.height) * zoom}
+          onPointerDown={(event) => onStart(event, 'end')}
+        />
+      </>
+    )
+  }
+
+  return (
+    <>
+      {HANDLES.map((handle) => (
+        <Handle
+          key={handle.id}
+          cursor={handle.cursor}
+          left={(box.x + box.width * handle.fx) * zoom}
+          top={(box.y + box.height * handle.fy) * zoom}
+          onPointerDown={(event) => onStart(event, handle.id)}
+        />
+      ))}
+    </>
+  )
+}
+
+function Handle({
   left,
   top,
   cursor,
@@ -372,7 +496,17 @@ function ResizeHandle({
 }
 
 /** Éditeur de texte en place, calé sur la même métrique que le rendu SVG. */
-function TextEditor({ node, zoom, onCommit }: { node: DesignNode; zoom: number; onCommit: (value: string) => void }) {
+function TextEditor({
+  node,
+  box,
+  zoom,
+  onCommit,
+}: {
+  node: DesignNode
+  box: Box
+  zoom: number
+  onCommit: (value: string) => void
+}) {
   const [value, setValue] = useState(node.text ?? '')
   const ref = useRef<HTMLTextAreaElement>(null)
   const metrics = textMetrics(node)
@@ -396,11 +530,11 @@ function TextEditor({ node, zoom, onCommit }: { node: DesignNode; zoom: number; 
         if (event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey))) onCommit(value)
       }}
       style={{
-        left: node.x * zoom,
-        top: node.y * zoom,
-        width: node.width * zoom,
-        minHeight: node.height * zoom,
-        fontSize: (metrics.fontSize ?? 24) * zoom,
+        left: box.x * zoom,
+        top: box.y * zoom,
+        width: box.width * zoom,
+        minHeight: box.height * zoom,
+        fontSize: metrics.fontSize * zoom,
         lineHeight: `${metrics.lineStep * zoom}px`,
         fontFamily: node.fontFamily,
         fontWeight: node.fontWeight,

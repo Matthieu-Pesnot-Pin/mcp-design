@@ -1,5 +1,6 @@
 import { DesignNodeSchema, type DesignNode, type NodeType } from "../../shared/schemas/design.schema.js";
 import {
+  GROUP_DERIVED_FIELDS,
   NODE_DEFAULTS,
   NODE_GEOMETRY_FIELDS,
   NODE_STYLE_FIELDS,
@@ -12,6 +13,18 @@ export class DesignError extends Error {}
 
 const GEOMETRY = NODE_GEOMETRY_FIELDS as ReadonlyArray<keyof DesignNode>;
 const ALLOWED = NODE_STYLE_FIELDS as Record<NodeType, ReadonlyArray<keyof DesignNode>>;
+const DERIVED = GROUP_DERIVED_FIELDS as ReadonlyArray<keyof DesignNode>;
+
+/** Champs geometriques réellement modifiables pour un type donné. */
+function geometryFieldsFor(type: NodeType): ReadonlyArray<keyof DesignNode> {
+  return type === "group" ? GEOMETRY.filter((field) => !DERIVED.includes(field)) : GEOMETRY;
+}
+
+function readParentId(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value === "string" && value.trim() !== "") return value.trim();
+  throw new DesignError(`"parentId" must be the id of an existing group, or null for the root level.`);
+}
 
 function requireFiniteNumber(value: unknown, field: string): number {
   const num = typeof value === "number" ? value : Number(value);
@@ -46,6 +59,7 @@ export function buildNode(input: CreateNodeInput, existingIds: Set<string>, inde
     id,
     type,
     name: typeof input.name === "string" && input.name.trim() !== "" ? input.name.trim() : defaultNodeName(type, index),
+    parentId: input.parentId === undefined ? null : readParentId(input.parentId),
     x: 0,
     y: 0,
     rotation: 0,
@@ -53,7 +67,7 @@ export function buildNode(input: CreateNodeInput, existingIds: Set<string>, inde
     ...NODE_DEFAULTS[type],
   };
 
-  for (const field of GEOMETRY) {
+  for (const field of geometryFieldsFor(type)) {
     if (input[field] !== undefined) draft[field] = requireFiniteNumber(input[field], field as string);
   }
   for (const field of ALLOWED[type]) {
@@ -83,24 +97,22 @@ export function applyPatch(node: DesignNode, patch: Record<string, unknown>): De
     }
     next.name = patch.name.trim();
   }
-  for (const field of GEOMETRY) {
+  if (patch.parentId !== undefined) next.parentId = readParentId(patch.parentId);
+  for (const field of geometryFieldsFor(node.type)) {
     if (patch[field] !== undefined) next[field] = requireFiniteNumber(patch[field], field as string);
   }
   for (const field of ALLOWED[node.type]) {
     if (patch[field] !== undefined) next[field] = patch[field];
   }
 
-  const unknownFields = Object.keys(patch).filter(
-    (key) =>
-      key !== "id" &&
-      key !== "name" &&
-      !GEOMETRY.includes(key as keyof DesignNode) &&
-      !ALLOWED[node.type].includes(key as keyof DesignNode)
-  );
+  const editable = ["name", "parentId", ...geometryFieldsFor(node.type), ...ALLOWED[node.type]];
+  const unknownFields = Object.keys(patch).filter((key) => key !== "id" && !editable.includes(key as keyof DesignNode));
   if (unknownFields.length > 0) {
+    const derived = unknownFields.filter((key) => node.type === "group" && DERIVED.includes(key as keyof DesignNode));
+    const reason = derived.length > 0 ? ` The size of a group is derived from its content and cannot be set.` : "";
     throw new DesignError(
-      `Field(s) [${unknownFields.join(", ")}] cannot be set on a "${node.type}" node. ` +
-        `Allowed: ${["name", ...GEOMETRY, ...ALLOWED[node.type]].join(", ")}.`
+      `Field(s) [${unknownFields.join(", ")}] cannot be set on a "${node.type}" node.${reason} ` +
+        `Allowed: ${editable.join(", ")}.`
     );
   }
 

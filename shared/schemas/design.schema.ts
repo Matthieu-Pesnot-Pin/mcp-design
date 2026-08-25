@@ -4,12 +4,15 @@ import { z } from "zod";
  * Modèle de données du canvas.
  *
  * Un `Design` est une planche (artboard) unique contenant une liste plate de
- * noeuds. La liste est ordonnée : l'index = l'ordre d'empilement (le dernier
- * élément est au-dessus). Volontairement plat et sans groupes : l'agent et la
- * GUI manipulent la même structure sans traduction.
+ * noeuds. La liste est ordonnée : l'index = l'ordre d'empilement parmi les
+ * noeuds de meme parent (le dernier est au-dessus).
+ *
+ * La hierarchie est portee par `parentId` plutot que par de l'imbrication : le
+ * stockage reste plat, donc diffable et lisible, tandis que les coordonnees
+ * d'un noeud sont exprimees dans l'espace de son parent.
  */
 
-export const NODE_TYPES = ["rect", "ellipse", "line", "text"] as const;
+export const NODE_TYPES = ["rect", "ellipse", "line", "text", "group"] as const;
 export const NodeTypeSchema = z.enum(NODE_TYPES);
 export type NodeType = z.infer<typeof NodeTypeSchema>;
 
@@ -25,8 +28,10 @@ export const DesignNodeSchema = z.object({
   id: z.string(),
   type: NodeTypeSchema,
   name: z.string(),
+  /** Groupe conteneur, ou null a la racine de la planche. */
+  parentId: z.string().nullable().default(null),
 
-  // Boîte englobante. Pour `line`, le trait va de (x, y) à (x + width, y + height),
+  // Boîte englobante, exprimee dans l'espace du parent. Pour `line`, le trait va de (x, y) à (x + width, y + height),
   // ce qui autorise des largeurs/hauteurs négatives sur ce type uniquement.
   x: z.number(),
   y: z.number(),

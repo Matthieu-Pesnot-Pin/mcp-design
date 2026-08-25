@@ -107,7 +107,7 @@ test("summary lists every node with its geometry", () => {
   assert.match(summary, /# Demo Design \(demo\)/);
   assert.match(summary, /r1 rect "Carte" @ 20,30 200x100/);
   assert.match(summary, /t1 text "Titre" @ 40,200/);
-  assert.match(summary, /l1 line "Trait" from 40,400 to 340,400/);
+  assert.match(summary, /l1 line "Trait" @ 40,400 300x0/);
 });
 
 test("normalizedBox flips a negative-sized box", () => {
