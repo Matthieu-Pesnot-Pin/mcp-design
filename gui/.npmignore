@@ -1,0 +1,4 @@
+# Overrides gui/.gitignore for npm packing.
+# gui/.gitignore has "dist", which would strip gui/dist from the published
+# tarball even though package.json "files" lists it.
+node_modules
