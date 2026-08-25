@@ -38,6 +38,9 @@ export const api = {
     request<{ design: Design; designs: DesignSummary[] }>(`designs/${encodeURIComponent(design.id)}`, {
       method: 'PUT',
       body: JSON.stringify({
+        // Révision d'origine : le serveur refuse la sauvegarde si le design a
+        // avancé entre-temps, plutôt que d'écraser l'autre éditeur.
+        revision: design.revision,
         nodes: design.nodes,
         name: design.name,
         width: design.width,

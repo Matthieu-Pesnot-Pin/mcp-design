@@ -31,7 +31,8 @@ export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
     fontWeight: 400,
     fontStyle: "normal",
     textAlign: "left",
-    lineHeight: 1.35,
+    // En pixels, comme x/y/fontSize — jamais un multiplicateur.
+    lineHeight: 32,
   },
   // Un groupe n'a pas de taille propre : elle est deduite de son contenu.
   group: { width: 0, height: 0 },

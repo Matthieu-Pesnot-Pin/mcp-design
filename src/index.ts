@@ -13,6 +13,9 @@ import { resolveLogDir } from "./core/log-dir.js";
 import { DesignStore } from "./core/design-store.js";
 import { NODE_DEFAULTS } from "./core/node-factory.js";
 import { EXPORT_FORMATS } from "./core/export.js";
+import { MIN_LINE_HEIGHT_PX } from "../shared/render.js";
+import { NODE_FIELD_DOCS } from "../shared/node-fields.js";
+import { REORDER_DIRECTIONS } from "../shared/tree.js";
 import { listDesigns } from "./tools/list-designs.js";
 import { createDesign } from "./tools/create-design.js";
 import { getDesign } from "./tools/get-design.js";
@@ -26,6 +29,8 @@ import { ungroupNodes } from "./tools/ungroup-nodes.js";
 import { getChanges } from "./tools/get-changes.js";
 import { markSynced } from "./tools/mark-synced.js";
 import { exportDesignTool } from "./tools/export-design.js";
+import { screenshotDesignTool } from "./tools/screenshot-design.js";
+import { reorderNodesTool } from "./tools/reorder-nodes.js";
 import type { ToolResult } from "./tools/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -189,13 +194,18 @@ function handleSaveDesign(data: any) {
   const nodes = data?.nodes;
   if (!Array.isArray(nodes)) throw new Error("SAVE_DESIGN requires a nodes array.");
 
+  // La GUI remplace `nodes` en bloc : sans la révision d'origine, une sauvegarde
+  // partie d'un document périmé effacerait tout ce qu'un autre éditeur a ajouté.
+  const revision = Number(data?.revision);
+  const baseRevision = Number.isFinite(revision) ? revision : undefined;
+
   const design = store.mutate(id, "user", (draft) => {
     draft.nodes = nodes;
     if (data?.name !== undefined) draft.name = String(data.name);
     if (data?.width !== undefined) draft.width = Number(data.width);
     if (data?.height !== undefined) draft.height = Number(data.height);
     if (data?.background !== undefined) draft.background = String(data.background);
-  });
+  }, { baseRevision });
 
   return { design, designs: store.list() };
 }
@@ -318,14 +328,46 @@ function guiHint(designId: string): string {
 // --- Déclaration des outils -------------------------------------------------
 
 const NODE_FIELDS_DOC =
-  "Common fields: name, parentId, x, y, width, height (top-left based, pixels), rotation (degrees, around the bounding-box center), opacity (0-1). " +
-  "Coordinates are expressed in the parent's space: a node with parentId null is positioned against the artboard, a node inside a group is positioned against that group's origin. " +
+  "Every length is in PIXELS (x, y, width, height, strokeWidth, radius, fontSize, lineHeight), " +
+  "rotation is in degrees and opacity is a 0-1 ratio. " +
+  "Coordinates are expressed in the parent's space: a node with parentId null is positioned against the artboard, " +
+  "a node inside a group is positioned against that group's origin. " +
   "Set parentId to the id of a group node to nest an element, or to null to move it back to the root. " +
-  "A \"group\" node is a pure container: it accepts name, parentId, x, y, rotation and opacity, but its width and height are derived from its content and cannot be set. " +
-  `Shape fields (rect, ellipse): fill, stroke, strokeWidth; rect also accepts radius. ` +
-  "Line fields: stroke, strokeWidth — the line goes from (x, y) to (x + width, y + height). " +
-  "Text fields: text (use \\n for explicit line breaks — text is never auto-wrapped), color, fontSize, fontFamily, fontWeight, fontStyle (normal|italic), textAlign (left|center|right), lineHeight. " +
+  "A \"group\" node is a pure container: it accepts name, parentId, x, y, rotation and opacity, but its width and " +
+  "height are derived from its content and cannot be set. " +
+  "Fields accepted per type — rect: fill, stroke, strokeWidth, radius; ellipse: fill, stroke, strokeWidth; " +
+  "line: stroke, strokeWidth (the line goes from (x, y) to (x + width, y + height)); " +
+  "text: text, color, fontSize, fontFamily, fontWeight, fontStyle, textAlign, lineHeight. " +
   "Any field left out falls back to a sensible default, so a node can be created from its type alone.";
+
+/**
+ * Propriétés d'un noeud exposées à l'agent. Les descriptions viennent de
+ * shared/node-fields.ts, partagées avec le schéma zod : l'unité d'un champ n'est
+ * écrite qu'à un seul endroit.
+ */
+const NODE_PROPERTIES = {
+  id: { type: "string", description: NODE_FIELD_DOCS.id },
+  name: { type: "string", description: NODE_FIELD_DOCS.name },
+  parentId: { type: ["string", "null"], description: NODE_FIELD_DOCS.parentId },
+  x: { type: "number", description: NODE_FIELD_DOCS.x },
+  y: { type: "number", description: NODE_FIELD_DOCS.y },
+  width: { type: "number", description: NODE_FIELD_DOCS.width },
+  height: { type: "number", description: NODE_FIELD_DOCS.height },
+  rotation: { type: "number", description: NODE_FIELD_DOCS.rotation },
+  opacity: { type: "number", minimum: 0, maximum: 1, description: NODE_FIELD_DOCS.opacity },
+  fill: { type: "string", description: NODE_FIELD_DOCS.fill },
+  stroke: { type: "string", description: NODE_FIELD_DOCS.stroke },
+  strokeWidth: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.strokeWidth },
+  radius: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.radius },
+  text: { type: "string", description: NODE_FIELD_DOCS.text },
+  color: { type: "string", description: NODE_FIELD_DOCS.color },
+  fontSize: { type: "number", exclusiveMinimum: 0, description: NODE_FIELD_DOCS.fontSize },
+  fontFamily: { type: "string", description: NODE_FIELD_DOCS.fontFamily },
+  fontWeight: { type: "number", minimum: 100, maximum: 900, description: NODE_FIELD_DOCS.fontWeight },
+  fontStyle: { type: "string", enum: ["normal", "italic"], description: NODE_FIELD_DOCS.fontStyle },
+  textAlign: { type: "string", enum: ["left", "center", "right"], description: NODE_FIELD_DOCS.textAlign },
+  lineHeight: { type: "number", minimum: MIN_LINE_HEIGHT_PX, description: NODE_FIELD_DOCS.lineHeight },
+} as const;
 
 const DESIGN_ID_DOC = "Id of the design, as returned by list_designs or create_design.";
 
@@ -405,28 +447,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["rect", "ellipse", "line", "text", "group"], description: "Kind of node." },
-                id: { type: "string", description: "Optional explicit id. Generated when omitted." },
-                name: { type: "string", description: "Layer name shown in the GUI." },
-                parentId: { type: ["string", "null"], description: "Id of the containing group, or null for the root level." },
-                x: { type: "number" },
-                y: { type: "number" },
-                width: { type: "number" },
-                height: { type: "number" },
-                rotation: { type: "number" },
-                opacity: { type: "number" },
-                fill: { type: "string" },
-                stroke: { type: "string" },
-                strokeWidth: { type: "number" },
-                radius: { type: "number" },
-                text: { type: "string" },
-                color: { type: "string" },
-                fontSize: { type: "number" },
-                fontFamily: { type: "string" },
-                fontWeight: { type: "number" },
-                fontStyle: { type: "string", enum: ["normal", "italic"] },
-                textAlign: { type: "string", enum: ["left", "center", "right"] },
-                lineHeight: { type: "number" },
+                type: { type: "string", enum: ["rect", "ellipse", "line", "text", "group"], description: NODE_FIELD_DOCS.type },
+                ...NODE_PROPERTIES,
               },
               required: ["type"],
             },
@@ -449,7 +471,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           updates: {
             type: "array",
             description: "One object per node: { id, ...fields to change }.",
-            items: { type: "object", properties: { id: { type: "string", description: "Id of the node to patch." } }, required: ["id"] },
+            items: {
+              type: "object",
+              properties: {
+                ...NODE_PROPERTIES,
+                id: { type: "string", description: "Id of the node to patch." },
+              },
+              required: ["id"],
+            },
             minItems: 1,
           },
         },
@@ -497,6 +526,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "reorder_nodes",
+      description:
+        "Change the stacking order of nodes — which one is drawn on top of which. This is the layer panel, agent side. " +
+        "Stacking is relative to SIBLINGS only: a node can only move past nodes sharing its parent, never past the content of " +
+        "another group. To move an element above a whole group, reorder that group instead; to pull it out of a group, " +
+        "change its parentId with update_nodes. " +
+        "Moving several nodes at once keeps their relative order, and a node already at the edge of its sibling order simply does not move.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          node_ids: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Ids of the nodes to move. Groups are allowed — a group moves with its whole content. " +
+              "A node whose ancestor is also listed is ignored: the ancestor already carries it.",
+            minItems: 1,
+          },
+          position: {
+            type: "string",
+            enum: [...REORDER_DIRECTIONS],
+            description:
+              "front = on top of all its siblings, back = behind all of them, " +
+              "forward = one step up, backward = one step down.",
+          },
+        },
+        required: ["design_id", "node_ids", "position"],
+      },
+    },
+    {
       name: "get_changes",
       description:
         "Show every node added, modified, removed or reordered since the last mark_synced — this is how you pick up what the user changed by hand in the GUI. Reading changes never acknowledges them; call mark_synced once the changes are integrated into the code.",
@@ -526,6 +586,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           design_id: { type: "string", description: DESIGN_ID_DOC },
           format: { type: "string", enum: [...EXPORT_FORMATS], description: "Output format (default html)." },
           output_path: { type: "string", description: "Absolute path to write the export to. When omitted, the content is returned directly." },
+        },
+        required: ["design_id"],
+      },
+    },
+    {
+      name: "screenshot_design",
+      description:
+        "Render a design to a PNG image and look at it. Use it to check what the design actually looks like — proportions, overlaps, contrast, alignment — instead of inferring it from coordinates. " +
+        "Pass node_id to frame the capture on a single group (or any element) rather than the whole artboard. " +
+        "The image is returned inline; provide output_path to write a .png file instead.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          node_id: {
+            type: "string",
+            description:
+              "Id of a group (or any node) to frame the capture on. When omitted, the whole artboard is captured.",
+          },
+          scale: {
+            type: "number",
+            description:
+              "Zoom factor applied to the capture (default 1). Useful to read a small group. The result is capped so its longest side stays under 1568 px.",
+          },
+          padding: {
+            type: "number",
+            description: "Margin in design pixels around the captured node (default 16, ignored for a full-artboard capture).",
+          },
+          output_path: {
+            type: "string",
+            description: "Absolute path of a .png file to write. When omitted, the image is returned inline.",
+          },
         },
         required: ["design_id"],
       },
@@ -602,6 +694,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
         return result;
       }
 
+      case "reorder_nodes": {
+        const result = reorderNodesTool(store, params);
+        notifyDesignChanged(result.design!.id);
+        return result;
+      }
+
       case "get_changes":
         return getChanges(store, params);
 
@@ -613,6 +711,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "export_design":
         return exportDesignTool(store, params);
+
+      case "screenshot_design":
+        return screenshotDesignTool(store, params);
 
       case "reconnect_gui":
         return await reconnectGui(params);

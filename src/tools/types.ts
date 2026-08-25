@@ -21,3 +21,10 @@ export function requireString(args: Record<string, unknown> | undefined, field: 
   }
   return value.trim();
 }
+
+/** Variante de ToolResult pour les outils qui renvoient une image (capture d'écran). */
+export interface ImageToolResult {
+  [key: string]: unknown;
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  isError?: boolean;
+}

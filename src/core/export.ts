@@ -6,6 +6,7 @@ import {
   measuredTextHeight,
   normalizedBox,
   textLines,
+  textMetrics,
   type RenderNode,
 } from "../../shared/render.js";
 import { boundsOf, childrenByParent, computeLayout, type Box, type Layout } from "../../shared/tree.js";
@@ -113,7 +114,7 @@ function nodeCss(node: DesignNode, layout: Layout, parentBox: Box | null): strin
       `font-family: ${node.fontFamily ?? DEFAULT_FONT_FAMILY}`,
       `font-size: ${round(node.fontSize ?? 24)}px`,
       `font-weight: ${node.fontWeight ?? 400}`,
-      `line-height: ${node.lineHeight ?? 1.35}`,
+      `line-height: ${round(textMetrics(node as unknown as RenderNode).lineStep)}px`,
       `text-align: ${node.textAlign ?? "left"}`,
       "white-space: pre-wrap"
     );

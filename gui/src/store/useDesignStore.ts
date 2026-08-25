@@ -2,11 +2,11 @@ import { create } from 'zustand'
 import type { NodeKind } from '@shared/node-defaults'
 import {
   boundsOf,
-  childrenByParent,
   computeLayout,
   descendantIds,
   flattenPreOrder,
   outermostAncestor,
+  reorderNodes,
   spaceOriginOf,
   unionBoundsOf,
   type Box,
@@ -473,49 +473,9 @@ export const useDesignStore = create<DesignState>((set, get) => {
       const { design, selectedIds } = get()
       if (!design || selectedIds.length === 0) return
 
-      const targets = new Set(withoutSelectedAncestors(design.nodes, selectedIds))
-      const children = childrenByParent(design.nodes)
-
-      // Le réordonnancement se fait entre frères : l'ordre global est ensuite
-      // reconstruit en parcours préfixe, comme le fait le serveur.
-      const reordered = new Map<string, DesignNode[]>()
-      for (const [parentId, siblings] of children) {
-        const moving = siblings.filter((node) => targets.has(node.id))
-        if (moving.length === 0) continue
-
-        let next = [...siblings]
-        if (direction === 'front') {
-          next = [...next.filter((node) => !targets.has(node.id)), ...moving]
-        } else if (direction === 'back') {
-          next = [...moving, ...next.filter((node) => !targets.has(node.id))]
-        } else {
-          const step = direction === 'forward' ? 1 : -1
-          const indexes = next
-            .map((node, index) => (targets.has(node.id) ? index : -1))
-            .filter((index) => index >= 0)
-          for (const index of step === 1 ? indexes.reverse() : indexes) {
-            const swap = index + step
-            if (swap < 0 || swap >= next.length || targets.has(next[swap].id)) continue
-            ;[next[index], next[swap]] = [next[swap], next[index]]
-          }
-        }
-        reordered.set(parentId ?? '', next)
-      }
-
-      commit((current) => {
-        const merged = childrenByParent(current.nodes)
-        for (const [key, siblings] of reordered) merged.set(key === '' ? null : key, siblings)
-
-        const flat: DesignNode[] = []
-        const visit = (parentId: string | null) => {
-          for (const node of merged.get(parentId) ?? []) {
-            flat.push(node)
-            if (node.type === 'group') visit(node.id)
-          }
-        }
-        visit(null)
-        return { ...current, nodes: flat }
-      })
+      // Même implémentation que l'outil reorder_nodes du serveur : le panneau de
+      // calques et l'agent ne peuvent pas diverger.
+      commit((current) => ({ ...current, nodes: reorderNodes(current.nodes, selectedIds, direction) }))
     },
 
     patchArtboard: (patch) => {

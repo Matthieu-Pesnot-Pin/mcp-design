@@ -1,4 +1,5 @@
 import { nodeKindLabel } from '@shared/node-defaults'
+import { DEFAULT_FONT_SIZE, MIN_LINE_HEIGHT_PX, defaultLineHeight } from '@shared/render'
 import { useDesignStore } from '../store/useDesignStore'
 import { round } from '../utils/nodes'
 import type { DesignNode } from '../types'
@@ -223,11 +224,11 @@ export function Inspector() {
           </div>
           <div className="field-row">
             <NumberField
-              label="Interligne"
-              value={first.lineHeight}
-              step={0.05}
-              min={0.5}
-              onChange={(lineHeight) => patch({ lineHeight: Math.max(0.5, lineHeight) })}
+              label="Interligne (px)"
+              value={first.lineHeight ?? defaultLineHeight(first.fontSize ?? DEFAULT_FONT_SIZE)}
+              step={1}
+              min={MIN_LINE_HEIGHT_PX}
+              onChange={(lineHeight) => patch({ lineHeight: Math.max(MIN_LINE_HEIGHT_PX, lineHeight) })}
             />
             <label className="field">
               <span>Style</span>

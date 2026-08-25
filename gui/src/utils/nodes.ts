@@ -1,5 +1,5 @@
 import { NODE_DEFAULTS, clampNodeSize, defaultNodeName, type NodeKind } from '@shared/node-defaults'
-import { ancestorsOf, descendantIds, type Box } from '@shared/tree'
+import { descendantIds, withoutRedundantDescendants, type Box } from '@shared/tree'
 import type { DesignNode } from '../types'
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -67,8 +67,7 @@ export function cloneSubtrees(nodes: DesignNode[], rootIds: string[]): DesignNod
 
 /** Retire les noeuds dont un ancêtre est déjà sélectionné, pour ne pas les déplacer deux fois. */
 export function withoutSelectedAncestors(nodes: DesignNode[], selectedIds: string[]): string[] {
-  const selected = new Set(selectedIds)
-  return selectedIds.filter((id) => !ancestorsOf(nodes, id).some((ancestor) => selected.has(ancestor.id)))
+  return withoutRedundantDescendants(nodes, selectedIds)
 }
 
 export function rectsIntersect(a: Box, b: Box): boolean {

@@ -90,12 +90,14 @@ Cinq types d'éléments : `rect`, `ellipse`, `line`, `text` et `group`. Seul `ty
 
 **Champs communs** — `name`, `parentId`, `x`, `y`, `width`, `height` (en pixels, origine en haut à gauche), `rotation` (degrés, autour du centre de la boîte), `opacity` (0–1).
 
+**Toute longueur est en pixels**, sans exception : `x`, `y`, `width`, `height`, `strokeWidth`, `radius`, `fontSize` et `lineHeight`. Chaque champ porte sa description et son unité dans [`shared/node-fields.ts`](shared/node-fields.ts), d'où le schéma zod **et** l'`inputSchema` MCP les tirent tous les deux — une unité n'est écrite qu'à un seul endroit.
+
 | Type | Champs propres |
 |---|---|
 | `rect` | `fill`, `stroke`, `strokeWidth`, `radius` |
 | `ellipse` | `fill`, `stroke`, `strokeWidth` |
 | `line` | `stroke`, `strokeWidth` — le trait va de `(x, y)` à `(x + width, y + height)`, donc les deltas négatifs encodent la direction |
-| `text` | `text`, `color`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`, `textAlign`, `lineHeight` |
+| `text` | `text`, `color`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`, `textAlign`, `lineHeight` (en px) |
 | `group` | aucun — c'est un pur conteneur |
 
 ### Hiérarchie
@@ -113,6 +115,18 @@ La taille d'un groupe est **déduite de son contenu** : `width` et `height` sont
 
 Le texte n'est **jamais re-wrappé automatiquement** : seuls les `\n` explicites créent une nouvelle ligne. Le comportement est ainsi identique à l'écran et à l'export.
 
+`lineHeight` est une **distance en pixels entre deux lignes de base**, pas un multiplicateur de `fontSize` : avec `fontSize: 64`, on écrit `76`, pas `1.2`. C'est l'unité que les agents emploient spontanément, et la seule qui se lise dans la même échelle que le reste. Une valeur sous 4 est donc refusée à l'écriture avec un message explicite, et les fichiers écrits avant ce changement sont convertis à la lecture (`ratio x fontSize`) par [`src/core/migrate.ts`](src/core/migrate.ts). Champ omis = `fontSize x 1.35`.
+
+### Ordre d'empilement
+
+L'index dans la liste **est** l'ordre d'empilement : le dernier élément d'une fratrie est celui du dessus. `add_nodes` empile au-dessus, et `reorder_nodes` déplace ensuite ce qui existe déjà.
+
+| Outil | Effet |
+|---|---|
+| `reorder_nodes` | `position: front / back / forward / backward` sur un ou plusieurs éléments. Un groupe emporte son contenu ; plusieurs éléments gardent leur ordre relatif. |
+
+L'empilement est **relatif à la fratrie** : un élément ne passe jamais devant le contenu d'un autre groupe — c'est ce groupe qu'il faut alors réordonner, ou l'élément qu'il faut en sortir via `parentId`. La logique vit dans [`shared/tree.ts`](shared/tree.ts) et sert aussi bien l'outil que le panneau de calques de la GUI : les deux ne peuvent pas diverger.
+
 Un lot est intégralement validé avant la moindre écriture : une entrée invalide ne laisse jamais un design à moitié modifié.
 
 ### Récupérer le travail de l'utilisateur
@@ -122,6 +136,7 @@ Un lot est intégralement validé avant la moindre écriture : une entrée inval
 | `get_changes` | Liste tout ce qui a été ajouté, modifié, supprimé ou réordonné depuis la dernière baseline, champ par champ (`x: 40 -> 240`). |
 | `mark_synced` | Fige l'état courant comme nouvelle baseline. |
 | `export_design` | Rend la planche en `html`, `jsx`, `svg`, `json` ou `summary`. `output_path` écrit dans un fichier au lieu de renvoyer le contenu. |
+| `screenshot_design` | Rasterise la planche en PNG et le renvoie **en image** à l'agent. `node_id` cadre la capture sur un groupe (ou n'importe quel élément), `scale` zoome, `padding` ajoute de la marge, `output_path` écrit un `.png` au lieu de renvoyer l'image. |
 
 **`get_changes` n'acquitte jamais ce qu'il montre.** Seul `mark_synced` déplace la baseline, et il ne doit être appelé qu'une fois les modifications réellement reportées dans le code. Un simple appel de lecture ne peut donc pas faire disparaître un diff que l'agent n'a pas encore traité.
 
@@ -142,7 +157,8 @@ mark_synced   { design_id: "landing" }        ← point de départ de la compara
 
   … l'utilisateur ouvre la GUI et retouche la maquette …
 
-get_changes   { design_id: "landing" }        ← ce qu'il a changé, champ par champ
+get_changes      { design_id: "landing" }     ← ce qu'il a changé, champ par champ
+screenshot_design { design_id: "landing" }    ← ce que ça donne réellement, en image
 export_design { design_id: "landing", format: "html" }
   … l'agent reporte les valeurs dans le code de l'application …
 mark_synced   { design_id: "landing" }        ← acquittement
@@ -158,7 +174,7 @@ Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 - **Édition** — déplacement au glisser, 8 poignées de redimensionnement (2 extrémités pour une ligne), sélection multiple au rectangle d'encadrement ou au Maj+clic.
 - **Groupes** — `Ctrl+G` groupe la sélection, `Ctrl+Maj+G` la dissout. Un clic dans le canvas sélectionne le **groupe le plus haut** ; `Alt+clic` vise l'élément exact à l'intérieur. Déplacer un groupe déplace tout son contenu.
 - **Texte** — double-clic pour éditer en place, avec la même métrique qu'au rendu final.
-- **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne, alignement. Pour un groupe, la taille est affichée en lecture seule puisqu'elle suit son contenu.
+- **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne (en px), alignement. Pour un groupe, la taille est affichée en lecture seule puisqu'elle suit son contenu.
 - **Calques** — arbre repliable, ordre d'empilement, sélection, montée/descente d'un cran.
 
 ### Naviguer dans la planche
@@ -184,7 +200,7 @@ Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-in
 
 Les deux communiquent par IPC. Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
 
-`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, et `shared/node-defaults.ts` les valeurs par défaut. Les trois sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` produit.
+`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, et `shared/node-defaults.ts` les valeurs par défaut. Les trois sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
 
 Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle, taille des groupes recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
 

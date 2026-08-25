@@ -7,7 +7,7 @@
  * importable depuis le bundle GUI.
  */
 
-import { boundsOf, childrenByParent, computeLayout, normalizedBox } from "./tree.js";
+import { boundsOf, childrenByParent, computeLayout, normalizedBox, spaceOriginOf, type Box, type Layout } from "./tree.js";
 
 // La géométrie de base vit dans tree.ts (module bas-niveau, sans dépendance vers
 // celui-ci) ; elle reste exposée ici pour tous les appelants existants.
@@ -75,16 +75,38 @@ export function textLines(node: RenderNode): string[] {
 }
 
 export const DEFAULT_FONT_FAMILY = "Inter, system-ui, sans-serif";
+export const DEFAULT_FONT_SIZE = 24;
+
+/**
+ * Interligne appliqué quand `lineHeight` est absent, exprimé en multiple de la
+ * taille de police. C'est le seul endroit où un ratio subsiste : le champ
+ * stocké, lui, est toujours en pixels.
+ */
+export const DEFAULT_LINE_HEIGHT_RATIO = 1.35;
+
+/**
+ * En dessous de ce seuil, une valeur d'interligne ne peut pas être des pixels :
+ * 4px d'interligne écraserait n'importe quel texte lisible. C'est donc un ratio
+ * — refusé à l'écriture, converti à la lecture des anciens fichiers.
+ */
+export const MIN_LINE_HEIGHT_PX = 4;
+
+/** Interligne par défaut, en pixels, pour une taille de police donnée. */
+export function defaultLineHeight(fontSize: number): number {
+  return Math.round(fontSize * DEFAULT_LINE_HEIGHT_RATIO * 100) / 100;
+}
 
 export function textMetrics(node: RenderNode) {
-  const fontSize = node.fontSize ?? 24;
-  const lineHeight = node.lineHeight ?? 1.35;
+  const fontSize = node.fontSize ?? DEFAULT_FONT_SIZE;
+  // `lineHeight` est une distance en pixels entre deux lignes de base, pas un
+  // multiplicateur : c'est l'unité que l'agent emploie spontanément, et la
+  // seule qui se lise directement dans la même échelle que x, y et fontSize.
+  const lineStep = node.lineHeight ?? defaultLineHeight(fontSize);
   return {
     fontSize,
-    lineHeight,
-    lineStep: fontSize * lineHeight,
+    lineStep,
     /** Ligne de base de la première ligne, mesurée depuis le haut de la boîte. */
-    firstBaseline: fontSize * lineHeight * 0.5 + fontSize * 0.36,
+    firstBaseline: lineStep * 0.5 + fontSize * 0.36,
     anchor: node.textAlign === "center" ? "middle" : node.textAlign === "right" ? "end" : "start",
     anchorX:
       node.textAlign === "center"
@@ -185,36 +207,90 @@ export interface RenderDocument {
   nodes: RenderNode[];
 }
 
+/**
+ * Rend une liste de noeuds frères, en descendant récursivement dans les groupes.
+ * Partagé par le rendu plein document et le rendu cadré sur un seul élément.
+ */
+function renderSiblings(
+  nodes: RenderNode[],
+  children: Map<string | null, RenderNode[]>,
+  layout: Layout,
+  depth: number
+): string[] {
+  const pad = "  ".repeat(depth + 1);
+  return nodes.flatMap((node) => {
+    if (node.type !== "group") return [`${pad}${nodeToSvg(node)}`];
+
+    const bounds = boundsOf(layout, node.id);
+    const origin = layout.origin.get(node.id) ?? { x: 0, y: 0 };
+    const center = { cx: bounds.x + bounds.width / 2 - origin.x, cy: bounds.y + bounds.height / 2 - origin.y };
+    const opacity = node.opacity >= 1 ? "" : ` opacity="${round(node.opacity)}"`;
+
+    return [
+      `${pad}<g transform="${groupTransform(node, center)}"${opacity}>`,
+      ...renderSiblings(children.get(node.id) ?? [], children, layout, depth + 1),
+      `${pad}</g>`,
+    ];
+  });
+}
+
 export function documentToSvg(doc: RenderDocument): string {
   const layout = computeLayout(doc.nodes);
   const children = childrenByParent(doc.nodes);
 
   // Un groupe devient un <g> : ses enfants gardent leurs coordonnées locales,
   // c'est la transformation du conteneur qui les place.
-  const renderNodes = (nodes: RenderNode[], depth: number): string[] => {
-    const pad = "  ".repeat(depth + 1);
-    return nodes.flatMap((node) => {
-      if (node.type !== "group") return [`${pad}${nodeToSvg(node)}`];
-
-      const bounds = boundsOf(layout, node.id);
-      const origin = layout.origin.get(node.id) ?? { x: 0, y: 0 };
-      const center = { cx: bounds.x + bounds.width / 2 - origin.x, cy: bounds.y + bounds.height / 2 - origin.y };
-      const opacity = node.opacity >= 1 ? "" : ` opacity="${round(node.opacity)}"`;
-
-      return [
-        `${pad}<g transform="${groupTransform(node, center)}"${opacity}>`,
-        ...renderNodes(children.get(node.id) ?? [], depth + 1),
-        `${pad}</g>`,
-      ];
-    });
-  };
-
-  const body = renderNodes(children.get(null) ?? [], 0).join("\n");
+  const body = renderSiblings(children.get(null) ?? [], children, layout, 0).join("\n");
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" ` +
     `viewBox="0 0 ${doc.width} ${doc.height}">\n` +
     `  <rect x="0" y="0" width="${doc.width}" height="${doc.height}" fill="${escapeXml(doc.background)}" />\n` +
     (body ? `${body}\n` : "") +
+    `</svg>`
+  );
+}
+
+/**
+ * SVG cadré sur un seul élément — l'élément et son contenu, rien d'autre.
+ *
+ * Le sous-arbre est rendu dans ses coordonnées locales, puis translaté vers sa
+ * position document : le viewBox peut alors être exprimé dans le même repère
+ * que `computeLayout`, donc directement sur la boîte englobante de l'élément.
+ */
+export function subtreeToSvg(doc: RenderDocument, nodeId: string, padding = 0): string {
+  const node = doc.nodes.find((candidate) => candidate.id === nodeId);
+  if (!node) throw new Error(`Node "${nodeId}" not found in design "${doc.name}".`);
+
+  const layout = computeLayout(doc.nodes);
+  const children = childrenByParent(doc.nodes);
+  const bounds = boundsOf(layout, nodeId);
+
+  const region: Box = {
+    x: bounds.x - padding,
+    y: bounds.y - padding,
+    // Un groupe vide (ou un trait purement horizontal) a une dimension nulle :
+    // on garde au moins 1px pour que le PNG produit reste valide.
+    width: Math.max(1, bounds.width + padding * 2),
+    height: Math.max(1, bounds.height + padding * 2),
+  };
+
+  // Un groupe est rendu par son contenu, dans le repère du groupe ; tout autre
+  // noeud est rendu tel quel, dans le repère de son parent.
+  const origin =
+    node.type === "group" ? (layout.origin.get(nodeId) ?? { x: 0, y: 0 }) : spaceOriginOf(layout, node.parentId);
+  const inner =
+    node.type === "group"
+      ? renderSiblings([{ ...node, x: 0, y: 0 }], children, layout, 1).join("\n")
+      : `    ${nodeToSvg(node)}`;
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${round(region.width)}" height="${round(region.height)}" ` +
+    `viewBox="${round(region.x)} ${round(region.y)} ${round(region.width)} ${round(region.height)}">\n` +
+    `  <rect x="${round(region.x)}" y="${round(region.y)}" width="${round(region.width)}" ` +
+    `height="${round(region.height)}" fill="${escapeXml(doc.background)}" />\n` +
+    `  <g transform="translate(${round(origin.x)} ${round(origin.y)})">\n` +
+    (inner ? `${inner}\n` : "") +
+    `  </g>\n` +
     `</svg>`
   );
 }

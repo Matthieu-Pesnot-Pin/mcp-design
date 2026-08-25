@@ -195,3 +195,86 @@ export function boundsOf(layout: Layout, id: string): Box {
 export function unionBoundsOf(layout: Layout, ids: string[]): Box | null {
   return unionBox(ids.map((id) => layout.bounds.get(id)).filter((box): box is Box => box !== undefined));
 }
+
+// --- Ordre d'empilement -----------------------------------------------------
+
+export const REORDER_DIRECTIONS = ["front", "back", "forward", "backward"] as const;
+export type ReorderDirection = (typeof REORDER_DIRECTIONS)[number];
+
+/**
+ * Retire d'une sélection les éléments dont un ancêtre est déjà sélectionné.
+ *
+ * Déplacer un enfant en même temps que son groupe n'a pas de sens : le groupe
+ * emporte déjà son contenu, et les deux gestes s'appliqueraient dans des
+ * fratries différentes.
+ */
+export function withoutRedundantDescendants<T extends HierarchyNode>(nodes: T[], ids: string[]): string[] {
+  const selected = new Set(ids);
+  return ids.filter((id) => !ancestorsOf(nodes, id).some((ancestor) => selected.has(ancestor.id)));
+}
+
+/**
+ * Change l'ordre d'empilement d'un ou plusieurs éléments.
+ *
+ * L'empilement est **relatif à la fratrie** : un élément ne peut passer devant
+ * que ses frères, jamais devant le contenu d'un autre groupe — c'est le groupe
+ * lui-même qu'il faut alors déplacer. Chaque fratrie concernée est réordonnée
+ * indépendamment, puis la liste plate est reconstruite en parcours préfixe.
+ *
+ * `forward`/`backward` décalent d'un cran ; `front`/`back` vont au bout. Un
+ * élément déjà au bout de sa fratrie ne bouge pas, et un lot d'éléments garde
+ * son ordre relatif d'origine.
+ */
+export function reorderNodes<T extends HierarchyNode>(
+  nodes: T[],
+  ids: string[],
+  direction: ReorderDirection
+): T[] {
+  const targets = new Set(withoutRedundantDescendants(nodes, ids));
+  if (targets.size === 0) return nodes;
+
+  const children = childrenByParent(nodes);
+  for (const [parentId, siblings] of children) {
+    const moving = siblings.filter((node) => targets.has(node.id));
+    if (moving.length === 0) continue;
+
+    let next = [...siblings];
+    if (direction === "front") {
+      next = [...next.filter((node) => !targets.has(node.id)), ...moving];
+    } else if (direction === "back") {
+      next = [...moving, ...next.filter((node) => !targets.has(node.id))];
+    } else {
+      const step = direction === "forward" ? 1 : -1;
+      const indexes = next.map((node, index) => (targets.has(node.id) ? index : -1)).filter((index) => index >= 0);
+      // On part du bord vers lequel on pousse, sinon deux éléments adjacents se
+      // marchent dessus et le lot se désagrège.
+      for (const index of step === 1 ? indexes.reverse() : indexes) {
+        const swap = index + step;
+        if (swap < 0 || swap >= next.length || targets.has(next[swap].id)) continue;
+        [next[index], next[swap]] = [next[swap], next[index]];
+      }
+    }
+    children.set(parentId, next);
+  }
+
+  const emitted = new Set<string>();
+  const flat: T[] = [];
+  const visit = (parentId: string | null) => {
+    for (const node of children.get(parentId) ?? []) {
+      if (emitted.has(node.id)) continue;
+      emitted.add(node.id);
+      flat.push(node);
+      visit(node.id);
+    }
+  };
+  visit(null);
+  // Filet identique à flattenPreOrder : un noeud dont le parent a disparu reste
+  // dans la liste plutôt que d'être perdu.
+  for (const node of nodes) {
+    if (!emitted.has(node.id)) {
+      emitted.add(node.id);
+      flat.push(node);
+    }
+  }
+  return flat;
+}

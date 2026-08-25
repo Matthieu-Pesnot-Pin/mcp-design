@@ -185,6 +185,8 @@ test("the server advertises every design tool", async (t) => {
     "list_designs",
     "mark_synced",
     "reconnect_gui",
+    "reorder_nodes",
+    "screenshot_design",
     "ungroup_nodes",
     "update_design",
     "update_nodes",

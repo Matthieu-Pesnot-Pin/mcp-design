@@ -1,11 +1,17 @@
 import { z } from "zod";
+import { MIN_LINE_HEIGHT_PX } from "../render.js";
+import { NODE_FIELD_DOCS } from "../node-fields.js";
 
 /**
  * Modèle de données du canvas.
  *
  * Un `Design` est une planche (artboard) unique contenant une liste plate de
  * noeuds. La liste est ordonnée : l'index = l'ordre d'empilement parmi les
- * noeuds de meme parent (le dernier est au-dessus).
+ * noeuds de meme parent (le dernier est au-dessus). C'est `reorder_nodes` — et
+ * le panneau de calques de la GUI — qui manipule cet ordre.
+ *
+ * **Toutes les longueurs sont en pixels** (x, y, width, height, strokeWidth,
+ * radius, fontSize, lineHeight), les angles en degres et l'opacite entre 0 et 1.
  *
  * La hierarchie est portee par `parentId` plutot que par de l'imbrication : le
  * stockage reste plat, donc diffable et lisible, tandis que les coordonnees
@@ -25,36 +31,52 @@ export const TextAlignSchema = z.enum(TEXT_ALIGNS);
  * à connaître quatre formes différentes pour un gain nul côté rendu.
  */
 export const DesignNodeSchema = z.object({
-  id: z.string(),
-  type: NodeTypeSchema,
-  name: z.string(),
+  id: z.string().describe(NODE_FIELD_DOCS.id),
+  type: NodeTypeSchema.describe(NODE_FIELD_DOCS.type),
+  name: z.string().describe(NODE_FIELD_DOCS.name),
   /** Groupe conteneur, ou null a la racine de la planche. */
-  parentId: z.string().nullable().default(null),
+  parentId: z.string().nullable().default(null).describe(NODE_FIELD_DOCS.parentId),
 
-  // Boîte englobante, exprimee dans l'espace du parent. Pour `line`, le trait va de (x, y) à (x + width, y + height),
-  // ce qui autorise des largeurs/hauteurs négatives sur ce type uniquement.
-  x: z.number(),
-  y: z.number(),
-  width: z.number(),
-  height: z.number(),
-  rotation: z.number().default(0),
-  opacity: z.number().min(0).max(1).default(1),
+  // Boîte englobante, en PIXELS, exprimée dans l'espace du parent. Pour `line`, le trait va de (x, y) à
+  // (x + width, y + height), ce qui autorise des largeurs/hauteurs négatives sur ce type uniquement.
+  x: z.number().describe(NODE_FIELD_DOCS.x),
+  y: z.number().describe(NODE_FIELD_DOCS.y),
+  width: z.number().describe(NODE_FIELD_DOCS.width),
+  height: z.number().describe(NODE_FIELD_DOCS.height),
+  /** Degrés, sens horaire, autour du centre de la boîte. */
+  rotation: z.number().default(0).describe(NODE_FIELD_DOCS.rotation),
+  opacity: z.number().min(0).max(1).default(1).describe(NODE_FIELD_DOCS.opacity),
 
-  // Formes
-  fill: z.string().optional(),
-  stroke: z.string().optional(),
-  strokeWidth: z.number().min(0).optional(),
-  radius: z.number().min(0).optional(),
+  // Formes — couleurs CSS, épaisseurs et rayons en pixels.
+  fill: z.string().describe(NODE_FIELD_DOCS.fill).optional(),
+  stroke: z.string().describe(NODE_FIELD_DOCS.stroke).optional(),
+  strokeWidth: z.number().min(0).describe(NODE_FIELD_DOCS.strokeWidth).optional(),
+  radius: z.number().min(0).describe(NODE_FIELD_DOCS.radius).optional(),
 
-  // Texte
-  text: z.string().optional(),
-  color: z.string().optional(),
-  fontSize: z.number().positive().optional(),
-  fontFamily: z.string().optional(),
-  fontWeight: z.number().int().optional(),
-  fontStyle: z.enum(["normal", "italic"]).optional(),
-  textAlign: TextAlignSchema.optional(),
-  lineHeight: z.number().positive().optional(),
+  // Texte — fontSize et lineHeight sont tous deux en PIXELS.
+  text: z.string().describe(NODE_FIELD_DOCS.text).optional(),
+  color: z.string().describe(NODE_FIELD_DOCS.color).optional(),
+  fontSize: z.number().positive().describe(NODE_FIELD_DOCS.fontSize).optional(),
+  fontFamily: z.string().describe(NODE_FIELD_DOCS.fontFamily).optional(),
+  fontWeight: z.number().int().min(100).max(900).describe(NODE_FIELD_DOCS.fontWeight).optional(),
+  fontStyle: z.enum(["normal", "italic"]).describe(NODE_FIELD_DOCS.fontStyle).optional(),
+  textAlign: TextAlignSchema.describe(NODE_FIELD_DOCS.textAlign).optional(),
+  /**
+   * Distance entre deux lignes de base, **en pixels** — jamais un multiplicateur.
+   * Le plancher rejette a l'ecriture les valeurs en ratio (1.2, 1.35...) plutot
+   * que de rendre un paragraphe ecrase ; les anciens fichiers, eux, sont
+   * convertis a la lecture par src/core/migrate.ts.
+   */
+  lineHeight: z
+    .number()
+    .min(
+      MIN_LINE_HEIGHT_PX,
+      `lineHeight is a distance in PIXELS between baselines, not a multiplier of fontSize. ` +
+        `A value under ${MIN_LINE_HEIGHT_PX} is almost certainly a ratio: with fontSize 24 use about 32, ` +
+        `with fontSize 64 use about 86. Omit the field to get fontSize x 1.35 automatically.`
+    )
+    .describe(NODE_FIELD_DOCS.lineHeight)
+    .optional(),
 });
 
 export type DesignNode = z.infer<typeof DesignNodeSchema>;
