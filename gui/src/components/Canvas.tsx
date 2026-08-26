@@ -15,7 +15,7 @@ interface Point {
 type Gesture =
   | { kind: 'none' }
   | { kind: 'create'; type: Exclude<Tool, 'select'>; origin: Point; point: Point }
-  | { kind: 'move'; origin: Point; startNodes: DesignNode[] }
+  | { kind: 'move'; origin: Point; screen: Point; moved: boolean; startNodes: DesignNode[] }
   | { kind: 'resize'; handle: HandleId; origin: Point; startNode: DesignNode }
   | { kind: 'marquee'; origin: Point; point: Point }
   | { kind: 'pan'; clientX: number; clientY: number; panX: number; panY: number }
@@ -33,6 +33,47 @@ const HANDLES: Array<{ id: HandleId; cursor: string; fx: number; fy: number }> =
 
 function boxFromPoints(a: Point, b: Point): Box {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) }
+}
+
+/** Appui précédent, retenu pour reconnaître un double-clic sans l'évènement natif. */
+interface Press {
+  id: string
+  time: number
+  x: number
+  y: number
+}
+
+const DOUBLE_CLICK_MS = 400
+const DOUBLE_CLICK_SLOP_PX = 6
+/**
+ * Distance à parcourir avant qu'un appui devienne un déplacement.
+ *
+ * Sans ce seuil, le tremblement inévitable entre deux clics decale l'element
+ * d'un pixel : le document mute, le SVG est réécrit, et le geste en cours n'est
+ * plus un simple clic. C'est aussi ce qui evitait qu'on selectionne un element
+ * sans le bouger.
+ */
+const DRAG_THRESHOLD_PX = 4
+
+/**
+ * Reconnaissance maison du double-clic.
+ *
+ * L'évènement `dblclick` du navigateur n'est pas utilisable ici : il n'est émis
+ * que si les deux clics partagent une cible DOM, or le moindre tremblement de
+ * souris entre les deux déclenche un déplacement, qui réécrit le contenu SVG du
+ * noeud. La cible du second clic est alors un élément neuf, l'ancienne est
+ * détachée, et le `dblclick` ne part jamais. On compare donc nous-mêmes le
+ * noeud visé, l'instant et la distance — trois données que le re-rendu ne
+ * change pas.
+ */
+function isDoubleClick(previous: Press | null, nodeId: string, event: { timeStamp: number; clientX: number; clientY: number }): boolean {
+  return (
+    previous !== null &&
+    previous.id === nodeId &&
+    event.timeStamp - previous.time < DOUBLE_CLICK_MS &&
+    Math.abs(event.clientX - previous.x) < DOUBLE_CLICK_SLOP_PX &&
+    Math.abs(event.clientY - previous.y) < DOUBLE_CLICK_SLOP_PX
+  )
 }
 
 /** Nouvelle géométrie d'un noeud après déplacement d'une poignée de redimensionnement. */
@@ -90,6 +131,7 @@ export function Canvas() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture>({ kind: 'none' })
+  const lastPressRef = useRef<Press | null>(null)
   // Incrémenté à chaque début de geste : c'est ce qui (re)monte les écouteurs globaux.
   const [gestureTick, setGestureTick] = useState(0)
   const [rubberBand, setRubberBand] = useState<{ kind: 'create' | 'marquee'; box: Box } | null>(null)
@@ -179,6 +221,16 @@ export function Canvas() {
         gesture.point = point
         setRubberBand({ kind: 'marquee', box: boxFromPoints(gesture.origin, point) })
       } else if (gesture.kind === 'move') {
+        if (!gesture.moved) {
+          const far =
+            Math.abs(event.clientX - gesture.screen.x) >= DRAG_THRESHOLD_PX ||
+            Math.abs(event.clientY - gesture.screen.y) >= DRAG_THRESHOLD_PX
+          if (!far) return
+          // L'historique n'ouvre une transaction qu'ici : un clic qui ne
+          // deplace rien ne doit pas consommer un cran d'annulation.
+          gesture.moved = true
+          store.beginHistory()
+        }
         store.moveSelection(round(point.x - gesture.origin.x), round(point.y - gesture.origin.y), gesture.startNodes, {
           history: false,
         })
@@ -268,6 +320,9 @@ export function Canvas() {
 
     const point = toDesignPoint(event)
     if (tool === 'select') {
+      // Un clic dans le vide coupe la série : deux clics sur un même élément
+      // séparés par un clic ailleurs ne forment pas un double-clic.
+      lastPressRef.current = null
       useDesignStore.getState().setSelection([])
       beginGesture({ kind: 'marquee', origin: point, point })
     } else {
@@ -285,12 +340,27 @@ export function Canvas() {
     event.stopPropagation()
 
     const store = useDesignStore.getState()
-    // Alt+clic vise l'élément exact ; sinon on sélectionne son groupe le plus
-    // haut, ou le niveau où le double-clic a déjà fait entrer.
-    const targetId = clickTarget(nodes, node.id, store.selectedIds, event.altKey)
+    const doubleClick = isDoubleClick(lastPressRef.current, node.id, event)
+    lastPressRef.current = { id: node.id, time: event.timeStamp, x: event.clientX, y: event.clientY }
+
+    // Alt+clic vise l'élément exact ; le double-clic descend d'un cran vers lui ;
+    // sinon on sélectionne son groupe le plus haut, ou le niveau déjà atteint.
+    const targetId = event.altKey
+      ? node.id
+      : doubleClick
+        ? drillTarget(nodes, node.id, store.selectedIds)
+        : clickTarget(nodes, node.id, store.selectedIds, false)
 
     if (event.shiftKey) {
       store.toggleSelection(targetId)
+      return
+    }
+
+    // Plus rien à ouvrir sous le curseur : sur un texte, le cran suivant est son
+    // édition. On ne démarre alors aucun geste, l'éditeur prend la main.
+    if (doubleClick && targetId === node.id && node.type === 'text') {
+      store.setSelection([node.id])
+      store.setEditingText(node.id)
       return
     }
 
@@ -300,8 +370,13 @@ export function Canvas() {
     const ids = alreadySelected ? store.selectedIds : [targetId]
     const startNodes = nodes.filter((candidate) => ids.includes(candidate.id))
 
-    store.beginHistory()
-    beginGesture({ kind: 'move', origin: toDesignPoint(event), startNodes: structuredClone(startNodes) })
+    beginGesture({
+      kind: 'move',
+      origin: toDesignPoint(event),
+      screen: { x: event.clientX, y: event.clientY },
+      moved: false,
+      startNodes: structuredClone(startNodes),
+    })
   }
 
   const startResize = (event: React.PointerEvent, handle: HandleId) => {
@@ -343,15 +418,6 @@ export function Canvas() {
           className="canvas-node"
           data-hidden={node.id === editingTextId || undefined}
           onPointerDown={(event) => startNodeGesture(event, node)}
-          onDoubleClick={(event) => {
-            event.stopPropagation()
-            const store = useDesignStore.getState()
-            // Double-clic = un cran plus bas dans les groupes ; arrivé sur un
-            // texte déjà sélectionné, le cran suivant est son édition.
-            const target = drillTarget(nodes, node.id, store.selectedIds)
-            store.setSelection([target])
-            if (target === node.id && node.type === 'text') store.setEditingText(node.id)
-          }}
           dangerouslySetInnerHTML={{ __html: nodeToSvg(node) }}
         />
       )
