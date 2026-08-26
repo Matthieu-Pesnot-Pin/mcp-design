@@ -18,7 +18,8 @@ export function createDesign(store: DesignStore, args: Record<string, unknown> |
 
   return {
     ...textResult(
-      `Design "${design.name}" created with id "${design.id}" (${design.width}x${design.height}, background ${design.background}).\n` +
+      `Design "${design.name}" created with id "${design.id}" (${design.width}x${design.height}, background ${design.background})` +
+        `${design.group === null ? "" : ` in page group "${design.group}"`}.\n` +
         `Add content with add_nodes, then open the GUI to let the user refine it.`
     ),
     design,
