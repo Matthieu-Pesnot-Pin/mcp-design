@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { NodeKind } from '@shared/node-defaults'
 import {
+  ancestorsOf,
   boundsOf,
   computeLayout,
   descendantIds,
@@ -564,8 +565,37 @@ export function selectionBox(layout: Layout, ids: string[]): Box | null {
   return unionBoundsOf(layout, ids)
 }
 
-/** Ce que sélectionne un clic dans le canvas : le groupe le plus haut, ou l'élément lui-même. */
-export function clickTarget(nodes: DesignNode[], id: string, deep: boolean): string {
+/**
+ * Ce que sélectionne un clic simple dans le canvas.
+ *
+ * Par défaut le groupe le plus haut — on manipule une carte entière, pas son
+ * titre. Mais si la sélection courante est déjà quelque part sur le chemin de
+ * l'élément cliqué, elle est conservée : sans cela, le premier glissement après
+ * un double-clic ressortirait du groupe dans lequel on vient d'entrer.
+ */
+export function clickTarget(nodes: DesignNode[], id: string, selectedIds: string[], deep: boolean): string {
   if (deep) return id
-  return outermostAncestor(nodes, id)?.id ?? id
+  const chain = [id, ...ancestorsOf(nodes, id).map((node) => node.id)]
+  return selectedIds.find((selected) => chain.includes(selected)) ?? outermostAncestor(nodes, id)?.id ?? id
+}
+
+/**
+ * Ce que sélectionne un double-clic : un cran plus bas dans la hiérarchie, vers
+ * l'élément survolé — comme dans Figma.
+ *
+ * On descend d'un seul niveau à la fois plutôt que d'aller droit à la feuille :
+ * un double-clic sur une carte doit d'abord donner la carte, un second son
+ * titre. Quand la sélection courante n'est pas sur le chemin de l'élément
+ * cliqué, on repart du groupe le plus haut.
+ */
+export function drillTarget(nodes: DesignNode[], id: string, selectedIds: string[]): string {
+  const chain = [...ancestorsOf(nodes, id)].reverse().map((node) => node.id)
+  chain.push(id)
+
+  if (selectedIds.length === 1) {
+    const index = chain.indexOf(selectedIds[0])
+    // Déjà sur la feuille : il n'y a plus rien à ouvrir, on y reste.
+    if (index >= 0) return chain[Math.min(index + 1, chain.length - 1)]
+  }
+  return chain[0]
 }

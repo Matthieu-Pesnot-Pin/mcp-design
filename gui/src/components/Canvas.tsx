@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { groupTransform, nodeToSvg, normalizedBox, textMetrics } from '@shared/render'
 import { boundsOf, childrenByParent, computeLayout, spaceOriginOf, unionBoundsOf, type Box, type Layout } from '@shared/tree'
-import { clickTarget, useDesignStore } from '../store/useDesignStore'
+import { clickTarget, drillTarget, useDesignStore } from '../store/useDesignStore'
 import { rectsIntersect, round } from '../utils/nodes'
 import type { DesignNode, Tool } from '../types'
 
@@ -285,8 +285,9 @@ export function Canvas() {
     event.stopPropagation()
 
     const store = useDesignStore.getState()
-    // Alt+clic vise l'élément exact ; sinon on sélectionne son groupe le plus haut.
-    const targetId = clickTarget(nodes, node.id, event.altKey)
+    // Alt+clic vise l'élément exact ; sinon on sélectionne son groupe le plus
+    // haut, ou le niveau où le double-clic a déjà fait entrer.
+    const targetId = clickTarget(nodes, node.id, store.selectedIds, event.altKey)
 
     if (event.shiftKey) {
       store.toggleSelection(targetId)
@@ -343,10 +344,13 @@ export function Canvas() {
           data-hidden={node.id === editingTextId || undefined}
           onPointerDown={(event) => startNodeGesture(event, node)}
           onDoubleClick={(event) => {
-            if (node.type !== 'text') return
             event.stopPropagation()
-            useDesignStore.getState().setSelection([node.id])
-            useDesignStore.getState().setEditingText(node.id)
+            const store = useDesignStore.getState()
+            // Double-clic = un cran plus bas dans les groupes ; arrivé sur un
+            // texte déjà sélectionné, le cran suivant est son édition.
+            const target = drillTarget(nodes, node.id, store.selectedIds)
+            store.setSelection([target])
+            if (target === node.id && node.type === 'text') store.setEditingText(node.id)
           }}
           dangerouslySetInnerHTML={{ __html: nodeToSvg(node) }}
         />
