@@ -336,9 +336,11 @@ code {
   min-height: 60px;
 }
 
+/* Depot a la racine : le liseré entoure toute la zone hors groupes. */
 .design-tree[data-drop] {
-  outline: 1px dashed var(--accent);
-  outline-offset: 2px;
+  /* Liseré seul, sans fond : un aplat colorerait aussi les groupes qu'il
+     contient, alors que la cible est la racine, pas eux. */
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .design-group {
@@ -365,9 +367,21 @@ code {
   background: var(--shell);
 }
 
-.design-group-header[data-drop] {
+/* Cible du depot : tout le bloc du groupe s'allume, en-tete compris, pour que
+   la zone d'atterrissage soit lisible et pas seulement la ligne survolee. */
+.design-group[data-drop] {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  border-radius: 6px;
+}
+
+.design-group[data-drop] > .design-group-header {
+  color: var(--accent);
+}
+
+.design-group[data-drop] > .design-group-header .design-group-caret,
+.design-group[data-drop] > .design-group-header .design-group-count {
+  color: var(--accent);
 }
 
 .design-group-caret {

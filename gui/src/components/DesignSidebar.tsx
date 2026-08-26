@@ -57,9 +57,13 @@ export function DesignSidebar() {
     setCreating(false)
   }
 
-  /** Déposer une page sur un en-tête de groupe la range dedans ; `null` la remet à la racine. */
+  /** Déposer une page sur un groupe la range dedans ; `null` la remet à la racine. */
   const dropOn = (path: string | null) => (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes('text/design-id')) return
     event.preventDefault()
+    // Le groupe le plus profond survolé gagne : sans cela le dépôt retomberait
+    // toujours sur la racine, qui englobe tout l'arbre.
+    event.stopPropagation()
     setDropTarget(null)
     const designId = event.dataTransfer.getData('text/design-id')
     if (!designId) return
@@ -71,8 +75,19 @@ export function DesignSidebar() {
   const allowDrop = (path: string | null) => (event: React.DragEvent) => {
     if (!event.dataTransfer.types.includes('text/design-id')) return
     event.preventDefault()
+    event.stopPropagation()
     event.dataTransfer.dropEffect = 'move'
     setDropTarget(path ?? '')
+  }
+
+  /**
+   * Le survol d'un enfant émet un dragleave sur le parent : sans ce test, la
+   * cible clignoterait en passant d'une page à l'autre du même groupe.
+   */
+  const leaveDrop = (event: React.DragEvent) => {
+    const next = event.relatedTarget
+    if (next instanceof Node && event.currentTarget.contains(next)) return
+    setDropTarget(null)
   }
 
   return (
@@ -120,7 +135,7 @@ export function DesignSidebar() {
         className="design-tree"
         data-drop={dropTarget === '' || undefined}
         onDragOver={allowDrop(null)}
-        onDragLeave={() => setDropTarget(null)}
+        onDragLeave={leaveDrop}
         onDrop={dropOn(null)}
       >
         <Branch
@@ -130,7 +145,7 @@ export function DesignSidebar() {
           dropTarget={dropTarget}
           onToggle={toggleGroup}
           onDragOverGroup={allowDrop}
-          onDragLeaveGroup={() => setDropTarget(null)}
+          onDragLeaveGroup={leaveDrop}
           onDropGroup={dropOn}
         />
       </div>
@@ -161,7 +176,7 @@ function Branch({
   dropTarget: string | null
   onToggle: (path: string) => void
   onDragOverGroup: (path: string | null) => (event: React.DragEvent) => void
-  onDragLeaveGroup: () => void
+  onDragLeaveGroup: (event: React.DragEvent) => void
   onDropGroup: (path: string | null) => (event: React.DragEvent) => void
 }) {
   return (
@@ -175,16 +190,21 @@ function Branch({
       {branch.children.map((child) => {
         const isCollapsed = collapsed.includes(child.path)
         return (
-          <div key={child.path} className="design-group">
+          <div
+            key={child.path}
+            className="design-group"
+            // Tout le bloc accepte le depot, en-tete comme pages : viser une
+            // page du groupe range bien dans ce groupe.
+            data-drop={dropTarget === child.path || undefined}
+            onDragOver={onDragOverGroup(child.path)}
+            onDragLeave={onDragLeaveGroup}
+            onDrop={onDropGroup(child.path)}
+          >
             <button
               type="button"
               className="design-group-header"
               style={{ paddingLeft: 6 + depth * 12 }}
-              data-drop={dropTarget === child.path || undefined}
               onClick={() => onToggle(child.path)}
-              onDragOver={onDragOverGroup(child.path)}
-              onDragLeave={onDragLeaveGroup}
-              onDrop={onDropGroup(child.path)}
             >
               <span className="design-group-caret">{isCollapsed ? '▸' : '▾'}</span>
               <span className="design-group-name">{child.name}</span>
