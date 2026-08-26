@@ -11,6 +11,7 @@ import { deleteDesign } from "../src/tools/delete-design.js";
 import { addNodes } from "../src/tools/add-nodes.js";
 import { updateNodes } from "../src/tools/update-nodes.js";
 import { deleteNodes } from "../src/tools/delete-nodes.js";
+import { duplicateNodes } from "../src/tools/duplicate-nodes.js";
 import { getChanges } from "../src/tools/get-changes.js";
 import { markSynced } from "../src/tools/mark-synced.js";
 import { exportDesignTool } from "../src/tools/export-design.js";
@@ -274,6 +275,7 @@ test("every tool rejects a missing design_id the same way", (t) => {
     () => addNodes(store, { nodes: [{ type: "rect" }] }),
     () => updateNodes(store, { updates: [{ id: "a" }] }),
     () => deleteNodes(store, { node_ids: ["a"] }),
+    () => duplicateNodes(store, { node_ids: ["a"] }),
     () => getChanges(store, {}),
     () => markSynced(store, {}),
     () => exportDesignTool(store, {}),

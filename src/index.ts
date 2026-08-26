@@ -25,6 +25,7 @@ import { deleteDesign } from "./tools/delete-design.js";
 import { addNodes } from "./tools/add-nodes.js";
 import { updateNodes } from "./tools/update-nodes.js";
 import { deleteNodes } from "./tools/delete-nodes.js";
+import { duplicateNodes, MAX_DUPLICATE_COPIES } from "./tools/duplicate-nodes.js";
 import { groupNodes } from "./tools/group-nodes.js";
 import { groupDesigns } from "./tools/group-designs.js";
 import { ungroupNodes } from "./tools/ungroup-nodes.js";
@@ -519,6 +520,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "duplicate_nodes",
+      description:
+        "Copy elements or whole groups. A group is copied with everything inside it, and every copy gets fresh ids. " +
+        "This is the tool for repeated structures — a card, a list row, a section — build one carefully, then copy it and patch only what differs. " +
+        "Copies land next to the originals by default; use offset_x/offset_y to place them, count to lay out a series, and parent_id to drop them into another group.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          node_ids: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Ids of the elements or groups to copy. A node whose ancestor is also listed is ignored: the ancestor already carries it.",
+            minItems: 1,
+          },
+          offset_x: { type: "number", description: "Horizontal shift of each copy, in pixels (default 20). Use the element width plus a gutter to lay copies out in a row." },
+          offset_y: { type: "number", description: "Vertical shift of each copy, in pixels (default 20). Use the element height plus a gutter to stack copies in a column." },
+          count: { type: "number", description: `How many copies to make (default 1, max ${MAX_DUPLICATE_COPIES}). Copy n is shifted by n times the offset, which lays out a regular series in one call.` },
+          parent_id: {
+            type: ["string", "null"],
+            description:
+              "Group the copies are dropped into. Their x/y are then read in that group's space. Omit to keep the original's parent, or pass null to place the copies at the root.",
+          },
+        },
+        required: ["design_id", "node_ids"],
+      },
+    },
+    {
       name: "group_nodes",
       description:
         "Wrap existing nodes into a new group, so they can be moved, hidden or reordered together. The nodes must currently share the same parent, and nothing moves on screen: their coordinates are rebased onto the new group.",
@@ -722,6 +752,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "delete_nodes": {
         const result = deleteNodes(store, params);
+        notifyDesignChanged(result.design!.id);
+        return result;
+      }
+
+      case "duplicate_nodes": {
+        const result = duplicateNodes(store, params);
         notifyDesignChanged(result.design!.id);
         return result;
       }
