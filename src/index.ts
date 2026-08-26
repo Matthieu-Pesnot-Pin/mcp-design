@@ -16,6 +16,7 @@ import { EXPORT_FORMATS } from "./core/export.js";
 import { MIN_LINE_HEIGHT_PX } from "../shared/render.js";
 import { NODE_FIELD_DOCS } from "../shared/node-fields.js";
 import { REORDER_DIRECTIONS } from "../shared/tree.js";
+import { normalizeDesignGroup } from "../shared/schemas/design.schema.js";
 import { listDesigns } from "./tools/list-designs.js";
 import { createDesign } from "./tools/create-design.js";
 import { getDesign } from "./tools/get-design.js";
@@ -25,6 +26,7 @@ import { addNodes } from "./tools/add-nodes.js";
 import { updateNodes } from "./tools/update-nodes.js";
 import { deleteNodes } from "./tools/delete-nodes.js";
 import { groupNodes } from "./tools/group-nodes.js";
+import { groupDesigns } from "./tools/group-designs.js";
 import { ungroupNodes } from "./tools/ungroup-nodes.js";
 import { getChanges } from "./tools/get-changes.js";
 import { markSynced } from "./tools/mark-synced.js";
@@ -151,6 +153,7 @@ function handleIPCMessage(msg: any) {
           width: msg.data?.width === undefined ? undefined : Number(msg.data.width),
           height: msg.data?.height === undefined ? undefined : Number(msg.data.height),
           background: msg.data?.background,
+          group: msg.data?.group ?? null,
         });
         reply(msg, "CREATE_DESIGN_RESPONSE", { design, designs: store.list() });
       } catch (err: any) {
@@ -172,6 +175,17 @@ function handleIPCMessage(msg: any) {
         reply(msg, "DELETE_DESIGN_RESPONSE", { designs: store.list() });
       } catch (err: any) {
         replyError(msg, "DELETE_DESIGN_RESPONSE", err.message);
+      }
+      return;
+
+    case "SET_DESIGN_GROUP":
+      try {
+        store.mutate(String(msg.data?.id), "user", (draft) => {
+          draft.group = normalizeDesignGroup(msg.data?.group);
+        });
+        reply(msg, "SET_DESIGN_GROUP_RESPONSE", { designs: store.list() });
+      } catch (err: any) {
+        replyError(msg, "SET_DESIGN_GROUP_RESPONSE", err.message);
       }
       return;
 
@@ -371,6 +385,9 @@ const NODE_PROPERTIES = {
 
 const DESIGN_ID_DOC = "Id of the design, as returned by list_designs or create_design.";
 
+const GROUP_PATH_DOC =
+  "Page group this design belongs to, as a path like \"Marketing\" or \"Marketing/Landing\" (the \"/\" nests sub-groups). Pages sharing a path are folded together in the sidebar, which is how a project with many pages stays readable. Omit or pass null to leave the page at the root.";
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
@@ -382,7 +399,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "create_design",
       description:
-        "Create an empty design (artboard). Returns its id, which every other tool needs. Default canvas is 1440x900 on a white background.",
+        "Create an empty design (artboard). Returns its id, which every other tool needs. Default canvas is 1440x900 on a white background. " +
+        "As soon as a project has more than a handful of pages, pass `group` so they are filed under a named page group instead of piling up flat in the sidebar.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -390,6 +408,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           width: { type: "number", description: "Canvas width in pixels (default 1440). Use 375 for mobile, 1440 for desktop." },
           height: { type: "number", description: "Canvas height in pixels (default 900)." },
           background: { type: "string", description: "CSS color of the canvas background (default #ffffff)." },
+          group: { type: ["string", "null"], description: GROUP_PATH_DOC },
         },
         required: ["name"],
       },
@@ -409,12 +428,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "update_design",
-      description: "Change the artboard itself: its name, its dimensions or its background color. Does not touch the nodes.",
+      description:
+        "Change the artboard itself: its name, its page group, its dimensions or its background color. Does not touch the nodes.",
       inputSchema: {
         type: "object" as const,
         properties: {
           design_id: { type: "string", description: DESIGN_ID_DOC },
           name: { type: "string", description: "New name." },
+          group: { type: ["string", "null"], description: `New page group. ${GROUP_PATH_DOC} Pass null to move the page back to the root.` },
           width: { type: "number", description: "New canvas width in pixels." },
           height: { type: "number", description: "New canvas height in pixels." },
           background: { type: "string", description: "New CSS background color." },
@@ -554,6 +575,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ["design_id", "node_ids", "position"],
+      },
+    },
+    {
+      name: "group_designs",
+      description:
+        "File several pages into the same page group, or pull them back to the root. This is how the sidebar gets reorganised after the fact: " +
+        "create the pages first, then sort them, or move a whole batch under a new heading. " +
+        GROUP_PATH_DOC,
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Ids of the pages to file, as returned by list_designs.",
+            minItems: 1,
+          },
+          group: {
+            type: ["string", "null"],
+            description: `Destination page group. ${GROUP_PATH_DOC} Pass null to move the pages back to the root.`,
+          },
+        },
+        required: ["design_ids", "group"],
       },
     },
     {
@@ -697,6 +741,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
       case "reorder_nodes": {
         const result = reorderNodesTool(store, params);
         notifyDesignChanged(result.design!.id);
+        return result;
+      }
+
+      case "group_designs": {
+        const result = groupDesigns(store, params);
+        broadcastToGUI({ type: "DESIGNS_UPDATED", data: { designs: store.list() }, timestamp: new Date().toISOString() });
         return result;
       }
 

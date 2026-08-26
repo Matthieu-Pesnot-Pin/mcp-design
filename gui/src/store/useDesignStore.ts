@@ -65,8 +65,10 @@ interface DesignState {
 
   refreshDesigns: () => Promise<void>
   openDesign: (id: string) => Promise<void>
-  createDesign: (input: { name: string; width?: number; height?: number }) => Promise<string | null>
+  createDesign: (input: { name: string; width?: number; height?: number; group?: string | null }) => Promise<string | null>
   removeDesign: (id: string) => Promise<void>
+  /** Range une page dans un groupe de pages (chemin "Parent/Enfant"), ou l'en sort avec null. */
+  setDesignGroup: (id: string, group: string | null) => Promise<void>
   /** Recharge depuis le serveur après une modification faite par l'agent. */
   reloadCurrent: (designId: string) => Promise<void>
 
@@ -263,6 +265,20 @@ export const useDesignStore = create<DesignState>((set, get) => {
       } catch (err) {
         set({ error: (err as Error).message })
         return null
+      }
+    },
+
+    setDesignGroup: async (id, group) => {
+      try {
+        const result = await api.setDesignGroup(id, group)
+        set((state) => ({
+          designs: result.designs,
+          // Le design ouvert porte aussi le groupe : sans cette mise a jour, la
+          // prochaine sauvegarde repartirait d'un classement perime.
+          design: state.design?.id === id ? { ...state.design, group } : state.design,
+        }))
+      } catch (err) {
+        set({ error: (err as Error).message })
       }
     },
 

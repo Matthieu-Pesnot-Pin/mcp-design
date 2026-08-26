@@ -6,6 +6,8 @@ export type DesignNode = RenderNode
 export interface Design {
   id: string
   name: string
+  /** Groupe de pages, chemin "Parent/Enfant", ou null à la racine. */
+  group: string | null
   width: number
   height: number
   background: string
@@ -19,6 +21,8 @@ export interface Design {
 export interface DesignSummary {
   id: string
   name: string
+  /** Groupe de pages, chemin "Parent/Enfant", ou null à la racine. */
+  group: string | null
   width: number
   height: number
   nodeCount: number

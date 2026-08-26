@@ -10,6 +10,7 @@ function makeDesign(nodes: DesignNode[]): Design {
   return {
     id: "demo",
     name: "Demo Design",
+    group: null,
     width: 800,
     height: 600,
     background: "#fafaf8",

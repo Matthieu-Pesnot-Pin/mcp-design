@@ -13,6 +13,7 @@ export function createDesign(store: DesignStore, args: Record<string, unknown> |
     width: args?.width === undefined ? undefined : Number(args.width),
     height: args?.height === undefined ? undefined : Number(args.height),
     background: typeof args?.background === "string" ? args.background : undefined,
+    group: args?.group === undefined ? null : (args.group as string | null),
   });
 
   return {

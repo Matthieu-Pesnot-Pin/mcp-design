@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useDesignStore } from '../store/useDesignStore'
+import { GROUP_SEPARATOR, buildGroupTree, groupPaths, type GroupBranch } from '../utils/design-groups'
+import type { DesignSummary } from '../types'
 
 const PRESETS = [
   { label: 'Desktop 1440 × 900', width: 1440, height: 900 },
@@ -7,32 +9,78 @@ const PRESETS = [
   { label: 'Carré 1080 × 1080', width: 1080, height: 1080 },
 ]
 
+const COLLAPSED_KEY = 'mcp-design.collapsed-groups'
+
+function readCollapsed(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 export function DesignSidebar() {
   const designs = useDesignStore((state) => state.designs)
-  const current = useDesignStore((state) => state.design)
-  const openDesign = useDesignStore((state) => state.openDesign)
   const createDesign = useDesignStore((state) => state.createDesign)
-  const removeDesign = useDesignStore((state) => state.removeDesign)
+  const setDesignGroup = useDesignStore((state) => state.setDesignGroup)
 
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
+  const [group, setGroup] = useState('')
   const [preset, setPreset] = useState(0)
+  const [collapsed, setCollapsed] = useState<string[]>(readCollapsed)
+  /** Chemin du groupe survolé pendant un glisser-déposer, pour le retour visuel. */
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+
+  const tree = useMemo(() => buildGroupTree(designs), [designs])
+  const knownGroups = useMemo(() => groupPaths(designs), [designs])
+
+  const toggleGroup = (path: string) => {
+    setCollapsed((current) => {
+      const next = current.includes(path) ? current.filter((entry) => entry !== path) : [...current, path]
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next))
+      } catch {
+        // Stockage indisponible : le pliage reste valable pour la session.
+      }
+      return next
+    })
+  }
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    await createDesign({ name: trimmed, ...PRESETS[preset] })
+    await createDesign({ name: trimmed, group: group.trim() || null, ...PRESETS[preset] })
     setName('')
     setCreating(false)
+  }
+
+  /** Déposer une page sur un en-tête de groupe la range dedans ; `null` la remet à la racine. */
+  const dropOn = (path: string | null) => (event: React.DragEvent) => {
+    event.preventDefault()
+    setDropTarget(null)
+    const designId = event.dataTransfer.getData('text/design-id')
+    if (!designId) return
+    const moved = designs.find((entry) => entry.id === designId)
+    if (!moved || (moved.group ?? null) === path) return
+    void setDesignGroup(designId, path)
+  }
+
+  const allowDrop = (path: string | null) => (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes('text/design-id')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDropTarget(path ?? '')
   }
 
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h1>Designs</h1>
+        <h1>Pages</h1>
         <button type="button" className="ghost-button" onClick={() => setCreating((open) => !open)}>
-          {creating ? 'Annuler' : '+ Nouveau'}
+          {creating ? 'Annuler' : '+ Nouvelle'}
         </button>
       </div>
 
@@ -40,10 +88,21 @@ export function DesignSidebar() {
         <form className="create-form" onSubmit={submit}>
           <input
             autoFocus
-            placeholder="Nom du design"
+            placeholder="Nom de la page"
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
+          <input
+            list="design-groups"
+            placeholder="Groupe (optionnel, ex. Marketing/Landing)"
+            value={group}
+            onChange={(event) => setGroup(event.target.value)}
+          />
+          <datalist id="design-groups">
+            {knownGroups.map((path) => (
+              <option key={path} value={path} />
+            ))}
+          </datalist>
           <select value={preset} onChange={(event) => setPreset(Number(event.target.value))}>
             {PRESETS.map((entry, index) => (
               <option key={entry.label} value={index}>
@@ -57,44 +116,152 @@ export function DesignSidebar() {
         </form>
       )}
 
-      <ul className="design-list">
-        {designs.map((entry) => (
-          <li key={entry.id}>
-            <button
-              type="button"
-              className="design-item"
-              data-active={current?.id === entry.id || undefined}
-              onClick={() => void openDesign(entry.id)}
-            >
-              <span className="design-name">{entry.name}</span>
-              <span className="design-meta">
-                {entry.width} × {entry.height} · {entry.nodeCount} élément{entry.nodeCount > 1 ? 's' : ''}
-              </span>
-              {entry.pendingChanges > 0 && (
-                <span className="design-badge" title="Modifications pas encore récupérées par l'agent">
-                  {entry.pendingChanges} à synchroniser
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              title="Supprimer ce design"
-              onClick={() => {
-                if (confirm(`Supprimer définitivement « ${entry.name} » ?`)) void removeDesign(entry.id)
-              }}
-            >
-              ✕
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div
+        className="design-tree"
+        data-drop={dropTarget === '' || undefined}
+        onDragOver={allowDrop(null)}
+        onDragLeave={() => setDropTarget(null)}
+        onDrop={dropOn(null)}
+      >
+        <Branch
+          branch={tree}
+          depth={0}
+          collapsed={collapsed}
+          dropTarget={dropTarget}
+          onToggle={toggleGroup}
+          onDragOverGroup={allowDrop}
+          onDragLeaveGroup={() => setDropTarget(null)}
+          onDropGroup={dropOn}
+        />
+      </div>
 
       {designs.length === 0 && !creating && (
         <p className="empty-hint">
-          Aucun design. Créez-en un ici, ou demandez à l'agent d'en générer un avec l'outil <code>create_design</code>.
+          Aucune page. Créez-en une ici, ou demandez à l'agent d'en générer avec l'outil <code>create_design</code>.
         </p>
       )}
     </aside>
+  )
+}
+
+/** Un niveau de l'arbre : ses pages, puis ses sous-groupes. */
+function Branch({
+  branch,
+  depth,
+  collapsed,
+  dropTarget,
+  onToggle,
+  onDragOverGroup,
+  onDragLeaveGroup,
+  onDropGroup,
+}: {
+  branch: GroupBranch
+  depth: number
+  collapsed: string[]
+  dropTarget: string | null
+  onToggle: (path: string) => void
+  onDragOverGroup: (path: string | null) => (event: React.DragEvent) => void
+  onDragLeaveGroup: () => void
+  onDropGroup: (path: string | null) => (event: React.DragEvent) => void
+}) {
+  return (
+    <>
+      <ul className="design-list">
+        {branch.designs.map((entry) => (
+          <DesignRow key={entry.id} entry={entry} depth={depth} />
+        ))}
+      </ul>
+
+      {branch.children.map((child) => {
+        const isCollapsed = collapsed.includes(child.path)
+        return (
+          <div key={child.path} className="design-group">
+            <button
+              type="button"
+              className="design-group-header"
+              style={{ paddingLeft: 6 + depth * 12 }}
+              data-drop={dropTarget === child.path || undefined}
+              onClick={() => onToggle(child.path)}
+              onDragOver={onDragOverGroup(child.path)}
+              onDragLeave={onDragLeaveGroup}
+              onDrop={onDropGroup(child.path)}
+            >
+              <span className="design-group-caret">{isCollapsed ? '▸' : '▾'}</span>
+              <span className="design-group-name">{child.name}</span>
+              <span className="design-group-count">{child.total}</span>
+            </button>
+
+            {!isCollapsed && (
+              <Branch
+                branch={child}
+                depth={depth + 1}
+                collapsed={collapsed}
+                dropTarget={dropTarget}
+                onToggle={onToggle}
+                onDragOverGroup={onDragOverGroup}
+                onDragLeaveGroup={onDragLeaveGroup}
+                onDropGroup={onDropGroup}
+              />
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+function DesignRow({ entry, depth }: { entry: DesignSummary; depth: number }) {
+  const current = useDesignStore((state) => state.design)
+  const openDesign = useDesignStore((state) => state.openDesign)
+  const removeDesign = useDesignStore((state) => state.removeDesign)
+  const setDesignGroup = useDesignStore((state) => state.setDesignGroup)
+
+  return (
+    <li>
+      <button
+        type="button"
+        className="design-item"
+        style={{ paddingLeft: 8 + depth * 12 }}
+        draggable
+        onDragStart={(event) => {
+          // Type de données maison : le survol d'un groupe ne doit réagir qu'à
+          // une page glissée, pas à un fichier ou à du texte venu d'ailleurs.
+          event.dataTransfer.setData('text/design-id', entry.id)
+          event.dataTransfer.effectAllowed = 'move'
+        }}
+        data-active={current?.id === entry.id || undefined}
+        onClick={() => void openDesign(entry.id)}
+      >
+        <span className="design-name">{entry.name}</span>
+        <span className="design-meta">
+          {entry.width} × {entry.height} · {entry.nodeCount} élément{entry.nodeCount > 1 ? 's' : ''}
+        </span>
+        {entry.pendingChanges > 0 && (
+          <span className="design-badge" title="Modifications pas encore récupérées par l'agent">
+            {entry.pendingChanges} à synchroniser
+          </span>
+        )}
+      </button>
+      {entry.group && (
+        <button
+          type="button"
+          className="icon-button"
+          title={`Sortir du groupe « ${entry.group.split(GROUP_SEPARATOR).at(-1)} »`}
+          onClick={() => void setDesignGroup(entry.id, null)}
+        >
+          ⤴
+        </button>
+      )}
+      <button
+        type="button"
+        className="icon-button"
+        title="Supprimer cette page"
+        onClick={() => {
+          if (confirm(`Supprimer définitivement « ${entry.name} » ?`)) void removeDesign(entry.id)
+        }}
+      >
+        ✕
+      </button>
+    </li>
   )
 }

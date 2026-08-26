@@ -28,7 +28,7 @@ export const api = {
 
   getDesign: (id: string) => request<Design>(`designs/${encodeURIComponent(id)}`),
 
-  createDesign: (input: { name: string; width?: number; height?: number; background?: string }) =>
+  createDesign: (input: { name: string; width?: number; height?: number; background?: string; group?: string | null }) =>
     request<{ design: Design; designs: DesignSummary[] }>('designs', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -47,6 +47,13 @@ export const api = {
         height: design.height,
         background: design.background,
       }),
+    }),
+
+  /** Range une page dans un groupe (chemin "Parent/Enfant"), ou l'en sort avec null. */
+  setDesignGroup: (id: string, group: string | null) =>
+    request<{ designs: DesignSummary[] }>(`designs/${encodeURIComponent(id)}/group`, {
+      method: 'PUT',
+      body: JSON.stringify({ group }),
     }),
 
   deleteDesign: (id: string) =>

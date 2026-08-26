@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import {
   DesignSchema,
+  normalizeDesignGroup,
   type Design,
   type DesignNode,
   type DesignSummary,
@@ -17,6 +18,8 @@ export interface CreateDesignInput {
   width?: number;
   height?: number;
   background?: string;
+  /** Groupe de pages, chemin "Parent/Enfant". Null ou omis : a la racine. */
+  group?: string | null;
 }
 
 export interface MutateOptions {
@@ -190,6 +193,7 @@ export class DesignStore {
       summaries.push({
         id: design.id,
         name: design.name,
+        group: design.group,
         width: design.width,
         height: design.height,
         nodeCount: design.nodes.length,
@@ -267,6 +271,7 @@ export class DesignStore {
     const design: Design = {
       id: this.allocateId(name),
       name,
+      group: normalizeDesignGroup(input.group),
       width,
       height,
       background: input.background ?? "#ffffff",

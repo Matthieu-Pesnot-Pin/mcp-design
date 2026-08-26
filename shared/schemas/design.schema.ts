@@ -90,9 +90,30 @@ export const BaselineSchema = z.object({
 
 export type Baseline = z.infer<typeof BaselineSchema>;
 
+/**
+ * Chemin du groupe de pages auquel appartient un design, ou null a la racine.
+ *
+ * C'est un simple chemin separe par des "/" plutot qu'une entite a part : un
+ * groupe n'existe que tant qu'une page s'y trouve, donc rien a creer, rien a
+ * nettoyer, et le classement reste lisible dans le JSON.
+ */
+export const DESIGN_GROUP_SEPARATOR = "/";
+
+/** "  Marketing / Landing  " -> "Marketing/Landing" ; "" ou null -> null. */
+export function normalizeDesignGroup(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const segments = String(value)
+    .split(DESIGN_GROUP_SEPARATOR)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== "");
+  return segments.length === 0 ? null : segments.join(DESIGN_GROUP_SEPARATOR);
+}
+
 export const DesignSchema = z.object({
   id: z.string(),
   name: z.string(),
+  /** Groupe de pages, chemin "Parent/Enfant", ou null a la racine. */
+  group: z.string().nullable().default(null),
   width: z.number().positive(),
   height: z.number().positive(),
   background: z.string(),
@@ -111,6 +132,8 @@ export type Design = z.infer<typeof DesignSchema>;
 export interface DesignSummary {
   id: string;
   name: string;
+  /** Groupe de pages, chemin "Parent/Enfant", ou null a la racine. */
+  group: string | null;
   width: number;
   height: number;
   nodeCount: number;

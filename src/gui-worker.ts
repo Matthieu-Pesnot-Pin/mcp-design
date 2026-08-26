@@ -248,6 +248,18 @@ app.put("/api/designs/:id", async (c) => {
   return c.json(result.data);
 });
 
+app.put("/api/designs/:id/group", async (c) => {
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const result = await ipcRequest("SET_DESIGN_GROUP", { id: c.req.param("id"), group: body?.group ?? null }, 10000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
 app.delete("/api/designs/:id", async (c) => {
   const result = await ipcRequest("DELETE_DESIGN", { id: c.req.param("id") }, 10000);
   if (result.error) return c.json({ error: result.error }, 404);
