@@ -3,8 +3,10 @@ import { Canvas } from './components/Canvas'
 import { DesignSidebar } from './components/DesignSidebar'
 import { Inspector } from './components/Inspector'
 import { LayerPanel } from './components/LayerPanel'
+import { PanelResizer } from './components/PanelResizer'
 import { Toolbar } from './components/Toolbar'
 import { useIPC } from './hooks/useIPC'
+import { usePanelWidth } from './hooks/usePanelWidth'
 import { useKeyboard } from './hooks/useKeyboard'
 import { useDesignStore } from './store/useDesignStore'
 
@@ -20,6 +22,9 @@ export default function App() {
   const setError = useDesignStore((state) => state.setError)
   const flushSave = useDesignStore((state) => state.flushSave)
 
+  const [leftWidth, setLeftWidth, commitLeftWidth] = usePanelWidth('mcp-design.sidebar-width', 232)
+  const [rightWidth, setRightWidth, commitRightWidth] = usePanelWidth('mcp-design.rail-width', 268)
+
   // Ouvre automatiquement le design le plus récent au premier chargement.
   useEffect(() => {
     if (!design && designs.length > 0 && !loading) void openDesign(designs[0].id)
@@ -33,8 +38,12 @@ export default function App() {
   }, [flushSave])
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      style={{ ['--left-panel' as string]: `${leftWidth}px`, ['--right-panel' as string]: `${rightWidth}px` }}
+    >
       <DesignSidebar />
+      <PanelResizer side="left" width={leftWidth} onResize={setLeftWidth} onCommit={commitLeftWidth} />
 
       <main className="workspace">
         <Toolbar />
@@ -46,6 +55,8 @@ export default function App() {
           </div>
         )}
       </main>
+
+      <PanelResizer side="right" width={rightWidth} onResize={setRightWidth} onCommit={commitRightWidth} />
 
       <div className="right-rail">
         <Inspector />

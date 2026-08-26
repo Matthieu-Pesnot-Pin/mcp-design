@@ -65,8 +65,29 @@ code {
 
 .app {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr) 268px;
+  /* Les largeurs des rails sont pilotées par les poignees de redimensionnement. */
+  grid-template-columns: var(--left-panel, 232px) 5px minmax(0, 1fr) 5px var(--right-panel, 268px);
   height: 100%;
+}
+
+/* Poignee de redimensionnement d'un rail : une colonne fine, elargie au survol. */
+.panel-resizer {
+  position: relative;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-resizer::after {
+  /* Zone d'accroche plus large que le trait, sans decaler la grille. */
+  content: '';
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.panel-resizer:hover,
+.panel-resizer:active {
+  background: var(--accent);
 }
 
 .sidebar,
