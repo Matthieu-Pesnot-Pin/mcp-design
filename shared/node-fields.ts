@@ -14,7 +14,9 @@ export const NODE_FIELD_DOCS = {
   name: "Layer name shown in the GUI. Purely descriptive.",
   parentId:
     "Id of the containing group, or null for the root level of the artboard. " +
-    "Changing it reparents the node — its x/y are then read in the new parent's space, so it moves on screen.",
+    "Changing it reparents the node — its x/y are then read in the new parent's space, so it moves on screen. " +
+    "This is the field that builds the structure: nest sections, then blocks, then the nodes of a block, rather than dropping " +
+    "everything into one group. Only a handful of top-level sections should sit at the root.",
 
   x:
     "Horizontal position of the bounding box's left edge, in pixels, in the PARENT's coordinate space " +

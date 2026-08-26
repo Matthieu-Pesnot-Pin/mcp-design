@@ -384,6 +384,21 @@ const NODE_PROPERTIES = {
   lineHeight: { type: "number", minimum: MIN_LINE_HEIGHT_PX, description: NODE_FIELD_DOCS.lineHeight },
 } as const;
 
+/**
+ * Consigne de structure, repetee dans les outils qui creent ou reorganisent des
+ * noeuds. Sans elle, un agent produit spontanement un seul groupe contenant
+ * quarante elements a plat : le design devient impossible a selectionner, a
+ * deplacer ou a exporter en composants.
+ */
+const HIERARCHY_DOC =
+  "STRUCTURE THE ARTBOARD AS A TREE OF NESTED GROUPS, NOT AS ONE FLAT GROUP. " +
+  "A single group holding every element is the failure mode to avoid: nothing can then be moved, hidden, restyled or exported on its own. " +
+  "Mirror the structure real code would have — page > section (header, hero, feature list, footer) > repeated block (a card, a list row, a form field) > " +
+  "the few nodes of that block (icon, title, body, button). Three to four levels of nesting is normal, and any element that repeats deserves its own group. " +
+  "Build the hierarchy as you go: create a \"group\" node and, in the SAME add_nodes call, give its children that group's id as parentId — a child's x/y are then " +
+  "read from the group's origin, so the whole block moves as one. Name each group after what it is (\"Header\", \"Card / Pricing\", \"Nav item\"), never \"Groupe 1\": " +
+  "those names are what the user reads in the layer panel and what an export turns into component names.";
+
 const DESIGN_ID_DOC = "Id of the design, as returned by list_designs or create_design.";
 
 const GROUP_PATH_DOC =
@@ -458,7 +473,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         `Add one or more nodes on top of the design. Node types: ${Object.keys(NODE_DEFAULTS).join(", ")}. ` +
         NODE_FIELDS_DOC +
-        " Nodes are drawn in array order, so the last one added sits on top.",
+        " Nodes are drawn in array order, so the last one added sits on top. " +
+        HIERARCHY_DOC,
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -484,6 +500,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "update_nodes",
       description:
         "Patch existing nodes. Each entry needs an id plus only the fields to change; everything else is preserved. " +
+        "Changing parentId is how an existing element is moved into (or out of) a group, which is the way to deepen a structure that came out too flat. " +
         NODE_FIELDS_DOC +
         " The whole batch is validated before anything is written, so an invalid entry changes nothing.",
       inputSchema: {
@@ -551,7 +568,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "group_nodes",
       description:
-        "Wrap existing nodes into a new group, so they can be moved, hidden or reordered together. The nodes must currently share the same parent, and nothing moves on screen: their coordinates are rebased onto the new group.",
+        "Wrap existing nodes into a new group, so they can be moved, hidden or reordered together. The nodes must currently share the same parent, and nothing moves on screen: their coordinates are rebased onto the new group. " +
+        "Call it repeatedly to build depth: group the nodes of one card, then group the cards into a row, then the row with its heading into a section. " +
+        HIERARCHY_DOC,
       inputSchema: {
         type: "object" as const,
         properties: {
