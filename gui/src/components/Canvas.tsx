@@ -601,9 +601,11 @@ function TextEditor({
       }}
       style={{
         left: box.x * zoom,
-        top: box.y * zoom,
+        // Le bloc de lignes est centré dans la boîte au rendu : l'éditeur se
+        // cale dessus, sinon le texte sauterait en entrant en édition.
+        top: (box.y + metrics.blockOffset) * zoom,
         width: box.width * zoom,
-        minHeight: box.height * zoom,
+        minHeight: metrics.blockHeight * zoom,
         fontSize: metrics.fontSize * zoom,
         lineHeight: `${metrics.lineStep * zoom}px`,
         fontFamily: node.fontFamily,

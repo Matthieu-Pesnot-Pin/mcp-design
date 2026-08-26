@@ -3,7 +3,6 @@ import {
   DEFAULT_FONT_FAMILY,
   documentToSvg,
   escapeXml,
-  measuredTextHeight,
   normalizedBox,
   textLines,
   textMetrics,
@@ -119,7 +118,12 @@ function nodeCss(node: DesignNode, layout: Layout, parentBox: Box | null): strin
       "white-space: pre-wrap"
     );
     if (node.fontStyle === "italic") declarations.push("font-style: italic");
-    declarations.push("height: auto", `min-height: ${round(measuredTextHeight(node as unknown as RenderNode))}px`);
+    // Même règle que le canvas : les lignes sont centrées dans la hauteur de la
+    // boîte, laquelle reste celle déclarée. Un bloc flex plutôt qu'un padding
+    // calculé, pour que le centrage tienne si la police de l'intégrateur mesure
+    // autrement ; et pas de min-height, sinon un texte trop grand pour sa boîte
+    // pousserait la mise en page ici alors qu'il déborde simplement sur le canvas.
+    declarations.push("display: flex", "flex-direction: column", "justify-content: center");
   }
 
   return declarations;

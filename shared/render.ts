@@ -102,11 +102,25 @@ export function textMetrics(node: RenderNode) {
   // multiplicateur : c'est l'unité que l'agent emploie spontanément, et la
   // seule qui se lise directement dans la même échelle que x, y et fontSize.
   const lineStep = node.lineHeight ?? defaultLineHeight(fontSize);
+  const blockHeight = Math.max(1, textLines(node).length) * lineStep;
+  /**
+   * Décalage du bloc de lignes pour le centrer dans la boîte.
+   *
+   * Sans lui, la position verticale du texte dépendrait de l'interligne et non
+   * de la boîte : un lineHeight de 32 sur une ligne de 11px dans une boîte de
+   * 16px poussait la ligne de base à 20px du haut, donc le texte entier sous sa
+   * propre boîte. L'interligne n'espace que les lignes entre elles ; c'est la
+   * boîte qui dit où le texte se pose.
+   */
+  const blockOffset = (Math.abs(node.height) - blockHeight) / 2;
   return {
     fontSize,
     lineStep,
+    /** Hauteur occupée par les lignes, interligne compris. */
+    blockHeight,
+    blockOffset,
     /** Ligne de base de la première ligne, mesurée depuis le haut de la boîte. */
-    firstBaseline: lineStep * 0.5 + fontSize * 0.36,
+    firstBaseline: blockOffset + lineStep * 0.5 + fontSize * 0.36,
     anchor: node.textAlign === "center" ? "middle" : node.textAlign === "right" ? "end" : "start",
     anchorX:
       node.textAlign === "center"
