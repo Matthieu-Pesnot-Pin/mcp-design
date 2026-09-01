@@ -85,8 +85,9 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 | `delete_nodes` | Supprime des éléments par identifiant. Supprimer un groupe emporte son contenu. |
 | `group_nodes` | Enveloppe des éléments dans un nouveau groupe, sans rien déplacer à l'écran. |
 | `ungroup_nodes` | Dissout des groupes : leur contenu remonte d'un niveau, toujours sans bouger. |
+| `detach_instances` | Rompt le lien d'une instance avec son composant : son contenu devient des éléments ordinaires. |
 
-Six types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon` et `group`. Seul `type` est obligatoire — sauf pour `icon`, qui a besoin du nom de l'icône ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
+Sept types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon`, `group` et `instance`. Seul `type` est obligatoire — sauf pour `icon`, qui a besoin du nom de l'icône ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
 
 **Champs communs** — `name`, `parentId`, `x`, `y`, `width`, `height` (en pixels, origine en haut à gauche), `rotation` (degrés, autour du centre de la boîte), `opacity` (0–1).
 
@@ -100,6 +101,7 @@ Six types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon` et `group`. S
 | `text` | `text`, `color`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`, `textAlign`, `lineHeight` (en px) |
 | `icon` | `icon` (obligatoire — le nom du dessin), `fill`, `stroke`, `strokeWidth` |
 | `group` | aucun — c'est un pur conteneur |
+| `instance` | `componentId` (obligatoire — le groupe reproduit) ; rien d'autre, son apparence vient de ce groupe |
 
 ### Icônes
 
@@ -143,6 +145,29 @@ La taille d'un groupe est **déduite de son contenu** : `width` et `height` sont
 Le texte n'est **jamais re-wrappé automatiquement** : seuls les `\n` explicites créent une nouvelle ligne. Le comportement est ainsi identique à l'écran et à l'export.
 
 `lineHeight` est une **distance en pixels entre deux lignes de base**, pas un multiplicateur de `fontSize` : avec `fontSize: 64`, on écrit `76`, pas `1.2`. C'est l'unité que les agents emploient spontanément, et la seule qui se lise dans la même échelle que le reste. Une valeur sous 4 est donc refusée à l'écriture avec un message explicite, et les fichiers écrits avant ce changement sont convertis à la lecture (`ratio x fontSize`) par [`src/core/migrate.ts`](src/core/migrate.ts). Champ omis = `fontSize x 1.35`.
+
+### Groupes réutilisables
+
+Quand un même bloc revient plusieurs fois — une carte, une ligne de liste, un bouton —, il ne se recopie pas : il se **construit une fois** en groupe, puis s'**instancie**. Une `instance` ne stocke aucun contenu, seulement l'identifiant du groupe qu'elle reproduit ; le sous-arbre est reconstitué au rendu. Éditer le groupe met donc à jour **toutes** ses instances d'un coup, et un bloc répété reste une seule chose à lire et à modifier. C'est le fonctionnement d'un composant principal dans Figma.
+
+```jsonc
+// 1. le composant : un groupe ordinaire
+{ "type": "group", "id": "card", "name": "Carte" }
+// 2. ses copies liées
+{ "type": "instance", "componentId": "card", "x": 320, "y": 80 }
+{ "type": "instance", "componentId": "card", "x": 640, "y": 80 }
+```
+
+Règles, volontairement peu nombreuses :
+
+- **Rien ne se surcharge dans une instance** — c'est ce qui garantit qu'elles restent identiques. Sa position, sa rotation et son opacité lui appartiennent ; tout le reste vient du composant. Une copie qui doit diverger devient un second groupe, ou se détache (`detach_instances`).
+- La **taille** d'une instance est déduite de son composant, comme celle d'un groupe.
+- Changer `componentId` **échange** l'instance de composant (le *swap* de Figma).
+- Les instances s'**imbriquent** (une instance de carte contenant une instance de bouton), mais un composant ne peut pas se contenir lui-même : le cas est refusé à l'écriture.
+- Un groupe encore instancié ne peut être ni supprimé ni dissous — il faut d'abord détacher ou supprimer ses instances.
+- Détacher une instance ne détache **pas** les instances imbriquées dans son composant : elles restent liées.
+
+Côté agent, le gain se lit dans `get_changes` : une retouche du composant apparaît comme **un** changement, pas comme N copies modifiées.
 
 ### Ordre d'empilement
 
@@ -227,9 +252,9 @@ Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-in
 
 Les deux communiquent par IPC. Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
 
-`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
+`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/instances.ts` l'expansion des instances en groupes, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
 
-Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle, taille des groupes recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
+Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle (y compris dans le graphe composant/instance), taille des groupes et des instances recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
 
 **Limite assumée de cette version** : un groupe se déplace, se pivote et change d'opacité, mais ne se redimensionne pas — mettre son contenu à l'échelle demanderait de propager un facteur dans tout le sous-arbre, ce qui dépasse le cadre d'un premier jet sobre.
 

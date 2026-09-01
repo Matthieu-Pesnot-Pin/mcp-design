@@ -46,11 +46,17 @@ export function createNode(type: NodeKind, patch: Partial<Omit<DesignNode, 'id' 
   return { ...base, width: size.width, height: size.height }
 }
 
+/** Décalage d'une copie, en pixels : assez pour la voir, assez peu pour la retrouver. */
+const COPY_OFFSET = 20
+
 /**
  * Copie un ensemble de noeuds avec tout leur contenu, en réattribuant les
  * identifiants et en recâblant les liens parent/enfant sur les copies.
+ *
+ * `offset` décale les racines copiées. Le détachement d'une instance, lui,
+ * matérialise le contenu **à sa place exacte** : il passe donc 0.
  */
-export function cloneSubtrees(nodes: DesignNode[], rootIds: string[]): DesignNode[] {
+export function cloneSubtrees(nodes: DesignNode[], rootIds: string[], offset = COPY_OFFSET): DesignNode[] {
   const included = new Set(rootIds)
   for (const id of rootIds) for (const descendant of descendantIds(nodes, id)) included.add(descendant)
 
@@ -64,8 +70,8 @@ export function cloneSubtrees(nodes: DesignNode[], rootIds: string[]): DesignNod
     parentId: node.parentId !== null ? (idMap.get(node.parentId) ?? node.parentId) : null,
     // Seuls les noeuds copiés au premier niveau sont décalés : les descendants
     // sont exprimés dans l'espace de leur parent et suivent donc tout seuls.
-    x: node.x + (roots.has(node.id) ? 20 : 0),
-    y: node.y + (roots.has(node.id) ? 20 : 0),
+    x: node.x + (roots.has(node.id) ? offset : 0),
+    y: node.y + (roots.has(node.id) ? offset : 0),
   }))
 }
 

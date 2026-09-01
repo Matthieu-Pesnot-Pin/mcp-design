@@ -13,6 +13,7 @@ import {
 } from "../../shared/render.js";
 import { ICON_GRID } from "../../shared/icons/index.js";
 import { boundsOf, childrenByParent, computeLayout, type Box, type Layout } from "../../shared/tree.js";
+import { expandInstances } from "../../shared/instances.js";
 
 export const EXPORT_FORMATS = ["svg", "html", "jsx", "json", "summary"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -23,6 +24,15 @@ function round(value: number): number {
 
 function toRenderNodes(design: Design): RenderNode[] {
   return design.nodes as unknown as RenderNode[];
+}
+
+/**
+ * Noeuds tels qu'ils se rendent : chaque instance y est remplacee par une copie
+ * du contenu de son composant. Les exports produisent donc du HTML/JSX complet,
+ * la ou le fichier de design, lui, ne stocke qu'une reference.
+ */
+function toExpandedNodes(design: Design): DesignNode[] {
+  return expandInstances(toRenderNodes(design)) as unknown as DesignNode[];
 }
 
 /** "Titre principal" -> "titre-principal" ; sert de nom de classe CSS. */
@@ -168,7 +178,8 @@ interface WalkContext {
 }
 
 function contextOf(design: Design): WalkContext {
-  return { layout: computeLayout(toRenderNodes(design)), children: childrenByParent(design.nodes) };
+  const nodes = toExpandedNodes(design);
+  return { layout: computeLayout(nodes as unknown as RenderNode[]), children: childrenByParent(nodes) };
 }
 
 function toHtml(design: Design): string {
@@ -285,7 +296,13 @@ function toJsx(design: Design): string {
 
 /** Inventaire textuel : ce que l'agent lit quand il veut comprendre sans parser du JSON. */
 export function toSummary(design: Design): string {
-  const { layout, children } = contextOf(design);
+  // Le layout vient des noeuds expanses — c'est la seule facon de connaitre
+  // l'encombrement reel d'une instance — mais l'arbre parcouru est celui du
+  // STOCKAGE : l'agent doit lire une instance comme une ligne, pas comme une
+  // copie du composant.
+  const { layout } = contextOf(design);
+  const children = childrenByParent(design.nodes);
+  const byId = new Map(design.nodes.map((node) => [node.id, node]));
   const lines = [
     `# ${design.name} (${design.id})`,
     `Canvas: ${design.width}x${design.height}, background ${design.background}`,
@@ -304,6 +321,12 @@ export function toSummary(design: Design): string {
         const count = (children.get(node.id) ?? []).length;
         lines.push(`${indent}- ${node.id} group "${node.name}" @ ${geometry} — ${count} child(ren)`);
         walk(children.get(node.id) ?? [], depth + 1);
+      } else if (node.type === "instance") {
+        const source = node.componentId === undefined ? undefined : byId.get(node.componentId);
+        lines.push(
+          `${indent}- ${node.id} instance "${node.name}" @ ${geometry} — mirrors group ${node.componentId}` +
+            `${source ? ` "${source.name}"` : " (missing)"}; edit that group to change every instance of it`
+        );
       } else if (node.type === "text") {
         const preview = textLines(node as unknown as RenderNode).join(" / ");
         lines.push(
@@ -336,6 +359,8 @@ export function toSummary(design: Design): string {
 export function exportDesign(design: Design, format: ExportFormat): string {
   switch (format) {
     case "svg":
+      // `documentToSvg` resout les instances lui-meme : le canvas de la GUI
+      // passe par la meme fonction, avec le meme resultat.
       return documentToSvg({
         name: design.name,
         width: design.width,

@@ -30,6 +30,7 @@ import { duplicateNodes, MAX_DUPLICATE_COPIES } from "./tools/duplicate-nodes.js
 import { groupNodes } from "./tools/group-nodes.js";
 import { groupDesigns } from "./tools/group-designs.js";
 import { ungroupNodes } from "./tools/ungroup-nodes.js";
+import { detachInstances } from "./tools/detach-instances.js";
 import { getChanges } from "./tools/get-changes.js";
 import { markSynced } from "./tools/mark-synced.js";
 import { exportDesignTool } from "./tools/export-design.js";
@@ -355,7 +356,8 @@ const NODE_FIELDS_DOC =
   "Fields accepted per type — rect: fill, stroke, strokeWidth, radius; ellipse: fill, stroke, strokeWidth; " +
   "line: stroke, strokeWidth (the line goes from (x, y) to (x + width, y + height)); " +
   "text: text, color, fontSize, fontFamily, fontWeight, fontStyle, textAlign, lineHeight; " +
-  "icon: icon (required — the name of the drawing), fill, stroke, strokeWidth. " +
+  "icon: icon (required — the name of the drawing), fill, stroke, strokeWidth; " +
+  "instance: componentId (required — the id of the group it mirrors); nothing else, its look comes from that group. " +
   "Any field left out falls back to a sensible default, so a node can be created from its type alone.";
 
 /**
@@ -392,6 +394,7 @@ const NODE_PROPERTIES = {
   strokeWidth: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.strokeWidth },
   radius: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.radius },
   icon: { type: "string", description: NODE_FIELD_DOCS.icon },
+  componentId: { type: "string", description: NODE_FIELD_DOCS.componentId },
   text: { type: "string", description: NODE_FIELD_DOCS.text },
   color: { type: "string", description: NODE_FIELD_DOCS.color },
   fontSize: { type: "number", exclusiveMinimum: 0, description: NODE_FIELD_DOCS.fontSize },
@@ -416,6 +419,20 @@ const HIERARCHY_DOC =
   "Build the hierarchy as you go: create a \"group\" node and, in the SAME add_nodes call, give its children that group's id as parentId — a child's x/y are then " +
   "read from the group's origin, so the whole block moves as one. Name each group after what it is (\"Header\", \"Card / Pricing\", \"Nav item\"), never \"Groupe 1\": " +
   "those names are what the user reads in the layer panel and what an export turns into component names.";
+
+/**
+ * Consigne sur les groupes reutilisables, repetee partout ou une repetition se
+ * cree. Sans elle, l'agent recopie le meme bloc N fois : le fichier gonfle, et
+ * la moindre retouche doit etre refaite autant de fois.
+ */
+const INSTANCE_DOC =
+  "REPEAT A BLOCK WITH INSTANCES, NOT WITH COPIES. When the same block appears more than once (cards, list rows, " +
+  "menu items, buttons), build it ONCE as a group, then add nodes of type \"instance\" pointing at that group with " +
+  "componentId. An instance stores no content of its own: editing the group updates every instance at once, and the " +
+  "repeated block stays a single thing to read and to change — the way a main component works in Figma. " +
+  "Nothing can be overridden inside an instance (that is what keeps them in sync): when one copy must differ, either " +
+  "make it a second group, or call detach_instances on it. Instances can be nested (a card instance holding a button " +
+  "instance), but a component can never contain itself.";
 
 const DESIGN_ID_DOC = "Id of the design, as returned by list_designs or create_design.";
 
@@ -494,7 +511,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         " Nodes are drawn in array order, so the last one added sits on top. " +
         HIERARCHY_DOC +
         " " +
-        ICON_DOC,
+        ICON_DOC +
+        " " +
+        INSTANCE_DOC,
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -507,7 +526,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               properties: {
                 type: {
                   type: "string",
-                  enum: ["rect", "ellipse", "line", "text", "icon", "group"],
+                  enum: ["rect", "ellipse", "line", "text", "icon", "group", "instance"],
                   description: NODE_FIELD_DOCS.type,
                 },
                 ...NODE_PROPERTIES,
@@ -526,6 +545,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Patch existing nodes. Each entry needs an id plus only the fields to change; everything else is preserved. " +
         "Changing parentId is how an existing element is moved into (or out of) a group, which is the way to deepen a structure that came out too flat. " +
         NODE_FIELDS_DOC +
+        " On an instance, only name, position, rotation, opacity, parentId and componentId apply — patch the nodes of its " +
+        "component to change how every instance looks. " +
         " The whole batch is validated before anything is written, so an invalid entry changes nothing.",
       inputSchema: {
         type: "object" as const,
@@ -550,7 +571,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "delete_nodes",
-      description: "Remove nodes from a design by id. Deleting a group also deletes everything inside it.",
+      description:
+        "Remove nodes from a design by id. Deleting a group also deletes everything inside it. " +
+        "A group still mirrored by instances cannot be deleted — delete those instances too, or detach them first.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -564,7 +587,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "duplicate_nodes",
       description:
         "Copy elements or whole groups. A group is copied with everything inside it, and every copy gets fresh ids. " +
-        "This is the tool for repeated structures — a card, a list row, a section — build one carefully, then copy it and patch only what differs. " +
+        "Use it for a one-off copy that is MEANT TO DIVERGE. For a block repeated identically, do not copy it: " +
+        "instantiate it instead (add_nodes with type \"instance\"), so a single edit updates every occurrence. " +
         "Copies land next to the originals by default; use offset_x/offset_y to place them, count to lay out a series, and parent_id to drop them into another group.",
       inputSchema: {
         type: "object" as const,
@@ -594,7 +618,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         "Wrap existing nodes into a new group, so they can be moved, hidden or reordered together. The nodes must currently share the same parent, and nothing moves on screen: their coordinates are rebased onto the new group. " +
         "Call it repeatedly to build depth: group the nodes of one card, then group the cards into a row, then the row with its heading into a section. " +
-        HIERARCHY_DOC,
+        "A group is also what an instance mirrors: group a block once, then repeat it with instances. " +
+        HIERARCHY_DOC +
+        " " +
+        INSTANCE_DOC,
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -609,7 +636,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "ungroup_nodes",
       description:
-        "Dissolve groups: their content moves up one level, keeping its position on screen. The groups themselves are removed.",
+        "Dissolve groups: their content moves up one level, keeping its position on screen. The groups themselves are removed. " +
+        "A group still mirrored by instances cannot be dissolved — detach those instances first.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -617,6 +645,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           group_ids: { type: "array", items: { type: "string" }, description: "Ids of the groups to dissolve.", minItems: 1 },
         },
         required: ["design_id", "group_ids"],
+      },
+    },
+    {
+      name: "detach_instances",
+      description:
+        "Break the link between instances and their component: the content becomes ordinary nodes, editable one by one, " +
+        "and stops following the component. This is the way out when a single copy must differ — nothing can be overridden " +
+        "inside an instance. Each node keeps its id, name and position; it simply becomes a group. An instance nested " +
+        "inside the component stays an instance.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          node_ids: { type: "array", items: { type: "string" }, description: "Ids of the instances to detach.", minItems: 1 },
+        },
+        required: ["design_id", "node_ids"],
       },
     },
     {
@@ -835,6 +879,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "ungroup_nodes": {
         const result = ungroupNodes(store, params);
+        notifyDesignChanged(result.design!.id);
+        return result;
+      }
+
+      case "detach_instances": {
+        const result = detachInstances(store, params);
         notifyDesignChanged(result.design!.id);
         return result;
       }

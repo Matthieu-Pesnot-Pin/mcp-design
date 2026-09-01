@@ -1,6 +1,6 @@
 import type { DesignStore } from "../core/design-store.js";
 import { DesignError } from "../core/node-factory.js";
-import { withDescendants } from "../core/hierarchy.js";
+import { survivingInstancesOf, withDescendants } from "../core/hierarchy.js";
 import { requireString, textResult } from "./types.js";
 import type { MutationResult } from "./add-nodes.js";
 
@@ -22,6 +22,18 @@ export function deleteNodes(store: DesignStore, args: Record<string, unknown> | 
   // des noeuds orphelins pointant vers un parent disparu.
   const toRemove = withDescendants(current.nodes, nodeIds.map((nodeId) => String(nodeId)));
   const nested = toRemove.size - nodeIds.length;
+
+  // Un composant encore instancie ne peut pas disparaitre : ses instances
+  // n'auraient plus rien a reproduire.
+  const orphaned = survivingInstancesOf(current.nodes, toRemove);
+  if (orphaned.length > 0) {
+    const groups = [...new Set(orphaned.map((instance) => instance.componentId))];
+    throw new DesignError(
+      `Group(s) ${groups.join(", ")} are still mirrored by ${orphaned.length} instance(s) (${orphaned
+        .map((instance) => instance.id)
+        .join(", ")}). Delete those instances too, or run detach_instances on them first.`
+    );
+  }
 
   const design = store.mutate(id, "agent", (draft) => {
     draft.nodes = draft.nodes.filter((n) => !toRemove.has(n.id));

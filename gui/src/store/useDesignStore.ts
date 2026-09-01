@@ -1,8 +1,10 @@
 import { create } from 'zustand'
-import type { NodeKind } from '@shared/node-defaults'
+import { SIZE_DERIVED_KINDS, type NodeKind } from '@shared/node-defaults'
+import { expandInstances } from '@shared/instances'
 import {
   ancestorsOf,
   boundsOf,
+  childrenByParent,
   computeLayout,
   descendantIds,
   flattenPreOrder,
@@ -84,6 +86,8 @@ interface DesignState {
   deleteSelected: () => void
   duplicateSelected: () => void
   groupSelected: () => void
+  /** Rompt le lien d'une instance avec son composant : son contenu devient éditable. */
+  detachSelected: () => void
   ungroupSelected: () => void
   reorderSelected: (direction: 'front' | 'back' | 'forward' | 'backward') => void
   patchArtboard: (patch: Partial<Pick<Design, 'name' | 'width' | 'height' | 'background'>>) => void
@@ -380,6 +384,12 @@ export const useDesignStore = create<DesignState>((set, get) => {
       const targets = new Set(selectedIds)
       for (const id of selectedIds) for (const descendant of descendantIds(design.nodes, id)) targets.add(descendant)
 
+      // Le serveur refuserait l'écriture : autant le dire ici, avant de perdre le geste.
+      if (usedComponents(design.nodes, targets).length > 0) {
+        set({ error: 'Ce groupe est encore reproduit par des instances : détachez-les ou supprimez-les d’abord.' })
+        return
+      }
+
       commit((current) => ({ ...current, nodes: current.nodes.filter((node) => !targets.has(node.id)) }))
       set({ selectedIds: [], editingTextId: null })
     },
@@ -410,7 +420,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
       }
 
       const parentId = [...parents][0] ?? null
-      const layout = computeLayout(design.nodes)
+      const layout = computeLayout(expandInstances(design.nodes))
       const box = unionBoundsOf(layout, memberIds)
       if (!box) return
 
@@ -449,6 +459,35 @@ export const useDesignStore = create<DesignState>((set, get) => {
       set((state) => ({ selectedIds: [groupId], expandedIds: [...state.expandedIds, groupId] }))
     },
 
+    detachSelected: () => {
+      const { design, selectedIds } = get()
+      if (!design) return
+
+      const instances = design.nodes.filter((node) => selectedIds.includes(node.id) && node.type === 'instance')
+      if (instances.length === 0) return
+
+      commit((current) => {
+        const children = childrenByParent(current.nodes)
+        const nodes: DesignNode[] = []
+        for (const node of current.nodes) {
+          if (!instances.some((instance) => instance.id === node.id)) {
+            nodes.push(node)
+            continue
+          }
+          // L'instance devient le groupe qu'elle reproduisait, à sa place exacte
+          // dans la pile ; le contenu du composant est copié juste derrière.
+          nodes.push({ ...node, type: 'group', componentId: undefined })
+          const sourceChildren = (children.get(node.componentId ?? '') ?? []).map((child) => child.id)
+          const copies = cloneSubtrees(current.nodes, sourceChildren, 0)
+          const copiedRoots = new Set(
+            copies.filter((copy) => !copies.some((other) => other.id === copy.parentId)).map((copy) => copy.id)
+          )
+          for (const copy of copies) nodes.push(copiedRoots.has(copy.id) ? { ...copy, parentId: node.id } : copy)
+        }
+        return { ...current, nodes }
+      })
+    },
+
     ungroupSelected: () => {
       const { design, selectedIds } = get()
       if (!design) return
@@ -457,6 +496,10 @@ export const useDesignStore = create<DesignState>((set, get) => {
         design.nodes.filter((node) => selectedIds.includes(node.id) && node.type === 'group').map((node) => node.id)
       )
       if (dissolved.size === 0) return
+      if (usedComponents(design.nodes, dissolved).length > 0) {
+        set({ error: 'Ce groupe est encore reproduit par des instances : détachez-les ou supprimez-les d’abord.' })
+        return
+      }
 
       const promoted: string[] = []
       commit((current) => {
@@ -552,11 +595,23 @@ export const useDesignStore = create<DesignState>((set, get) => {
 const clampZoom = (zoom: number) => Math.min(8, Math.max(0.05, zoom))
 
 /** La taille d'un groupe suit son contenu — recalculée à chaque mutation, comme côté serveur. */
+/** Composants encore reproduits par une instance qui, elle, survivrait à leur disparition. */
+function usedComponents(nodes: DesignNode[], removedIds: Set<string>): DesignNode[] {
+  return nodes.filter(
+    (node) =>
+      node.type === 'instance' &&
+      node.componentId !== undefined &&
+      removedIds.has(node.componentId) &&
+      !removedIds.has(node.id)
+  )
+}
+
 function refreshGroupSizes(nodes: DesignNode[]): DesignNode[] {
-  if (!nodes.some((node) => node.type === 'group')) return nodes
-  const layout = computeLayout(nodes)
+  if (!nodes.some((node) => SIZE_DERIVED_KINDS.includes(node.type))) return nodes
+  // Comme côté serveur : la taille d'une instance vient du contenu de son composant.
+  const layout = computeLayout(expandInstances(nodes))
   return nodes.map((node) => {
-    if (node.type !== 'group') return node
+    if (!SIZE_DERIVED_KINDS.includes(node.type)) return node
     const box = boundsOf(layout, node.id)
     return node.width === box.width && node.height === box.height ? node : { ...node, ...{ width: box.width, height: box.height } }
   })

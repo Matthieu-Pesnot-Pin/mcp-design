@@ -18,7 +18,7 @@ import { NODE_FIELD_DOCS } from "../node-fields.js";
  * d'un noeud sont exprimees dans l'espace de son parent.
  */
 
-export const NODE_TYPES = ["rect", "ellipse", "line", "text", "icon", "group"] as const;
+export const NODE_TYPES = ["rect", "ellipse", "line", "text", "icon", "group", "instance"] as const;
 export const NodeTypeSchema = z.enum(NODE_TYPES);
 export type NodeType = z.infer<typeof NodeTypeSchema>;
 
@@ -36,6 +36,13 @@ export const DesignNodeSchema = z.object({
   name: z.string().describe(NODE_FIELD_DOCS.name),
   /** Groupe conteneur, ou null a la racine de la planche. */
   parentId: z.string().nullable().default(null).describe(NODE_FIELD_DOCS.parentId),
+
+  /**
+   * Instance — le groupe dont ce noeud est une copie liee. Le contenu n'est pas
+   * duplique en stockage : il est resolu au rendu par `shared/instances.ts`,
+   * donc une retouche du groupe source se propage a toutes ses instances.
+   */
+  componentId: z.string().describe(NODE_FIELD_DOCS.componentId).optional(),
 
   // Boîte englobante, en PIXELS, exprimée dans l'espace du parent. Pour `line`, le trait va de (x, y) à
   // (x + width, y + height), ce qui autorise des largeurs/hauteurs négatives sur ce type uniquement.

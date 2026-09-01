@@ -1,5 +1,5 @@
 import type { DesignNode } from "../../shared/schemas/design.schema.js";
-import { GROUP_DERIVED_FIELDS } from "../../shared/node-defaults.js";
+import { GROUP_DERIVED_FIELDS, SIZE_DERIVED_KINDS } from "../../shared/node-defaults.js";
 
 /** Champs recalculés automatiquement : les signaler serait du bruit, pas un changement de design. */
 const DERIVED_GROUP_FIELDS = new Set<string>(GROUP_DERIVED_FIELDS as readonly string[]);
@@ -46,7 +46,7 @@ export function diffNodes(before: DesignNode[], after: DesignNode[]): DesignDiff
     const changes: NodeFieldChange[] = [];
     for (const field of fields) {
       if (field === "id" || field === "type") continue;
-      if (node.type === "group" && DERIVED_GROUP_FIELDS.has(field)) continue;
+      if (SIZE_DERIVED_KINDS.includes(node.type) && DERIVED_GROUP_FIELDS.has(field)) continue;
       const a = (previous as Record<string, unknown>)[field];
       const b = (node as Record<string, unknown>)[field];
       if (!equalValues(a, b)) changes.push({ field, before: a, after: b });

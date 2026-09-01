@@ -29,9 +29,13 @@ export function addNodes(store: DesignStore, args: Record<string, unknown> | und
     draft.nodes.push(...created);
   });
 
-  const lines = created.map(
-    (n) => `- ${n.id} — "${n.name}" (${n.type}) at ${Math.round(n.x)},${Math.round(n.y)} size ${Math.round(n.width)}x${Math.round(n.height)}`
-  );
+  // Les tailles sont relues APRES l'écriture : celle d'un groupe — ou d'une
+  // instance — est déduite de son contenu, donc inconnue avant la mutation.
+  const byId = new Map(design.nodes.map((n) => [n.id, n]));
+  const lines = created.map((node) => {
+    const n = byId.get(node.id) ?? node;
+    return `- ${n.id} — "${n.name}" (${n.type}) at ${Math.round(n.x)},${Math.round(n.y)} size ${Math.round(n.width)}x${Math.round(n.height)}`;
+  });
   return {
     ...textResult([`Added ${created.length} node(s) to "${design.name}":`, ...lines].join("\n")),
     design,

@@ -80,6 +80,8 @@ export function Inspector() {
   const reorderSelected = useDesignStore((state) => state.reorderSelected)
   const groupSelected = useDesignStore((state) => state.groupSelected)
   const ungroupSelected = useDesignStore((state) => state.ungroupSelected)
+  const detachSelected = useDesignStore((state) => state.detachSelected)
+  const setSelection = useDesignStore((state) => state.setSelection)
 
   if (!design) return null
 
@@ -133,7 +135,7 @@ export function Inspector() {
         <NumberField label="X" value={first.x} onChange={(x) => patch({ x })} />
         <NumberField label="Y" value={first.y} onChange={(y) => patch({ y })} />
       </div>
-      {uniformType === 'group' ? (
+      {uniformType === 'group' || uniformType === 'instance' ? (
         // La taille d'un groupe suit son contenu : l'afficher en lecture seule
         // évite de laisser croire qu'on peut la forcer.
         <div className="field-row">
@@ -226,7 +228,32 @@ export function Inspector() {
         </>
       )}
 
-      {uniformType && uniformType !== 'line' && uniformType !== 'text' && uniformType !== 'icon' && uniformType !== 'group' && (
+      {uniformType === 'instance' && !isMulti && (
+        <>
+          {/* Rien ne se surcharge dans une instance : son apparence se change en
+              éditant son composant, et une copie qui doit diverger se détache. */}
+          <label className="field">
+            <span>Composant</span>
+            <button
+              type="button"
+              className="toggle-button"
+              title="Sélectionner le groupe reproduit"
+              onClick={() => first.componentId && setSelection([first.componentId])}
+            >
+              {design.nodes.find((node) => node.id === first.componentId)?.name ?? '?'}
+            </button>
+          </label>
+          <p className="empty-hint">
+            Modifiez ce groupe pour mettre à jour toutes ses instances d'un coup. Pour faire diverger cette copie
+            seulement, détachez-la.
+          </p>
+          <button type="button" className="toggle-button" onClick={detachSelected}>
+            Détacher
+          </button>
+        </>
+      )}
+
+      {uniformType && uniformType !== 'line' && uniformType !== 'text' && uniformType !== 'icon' && uniformType !== 'group' && uniformType !== 'instance' && (
         <>
           <ColorField label="Remplissage" value={first.fill} onChange={(fill) => patch({ fill })} />
           <ColorField label="Contour" value={first.stroke} onChange={(stroke) => patch({ stroke })} />
@@ -328,6 +355,8 @@ export function Inspector() {
       )}
 
       <div className="inspector-actions">
+        {/* Une instance ne se dissout pas : elle se détache. Elle peut, en
+            revanche, être groupée avec d'autres éléments comme n'importe quoi. */}
         {uniformType === 'group' ? (
           <button type="button" onClick={ungroupSelected} title="Dissoudre le groupe (Ctrl+Maj+G)">
             Dissoudre

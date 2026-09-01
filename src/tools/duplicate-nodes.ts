@@ -1,8 +1,8 @@
 import type { DesignStore } from "../core/design-store.js";
 import type { DesignNode } from "../../shared/schemas/design.schema.js";
-import { descendantIds, withoutRedundantDescendants } from "../../shared/tree.js";
+import { withoutRedundantDescendants } from "../../shared/tree.js";
+import { cloneSubtrees } from "../core/clone.js";
 import { DesignError } from "../core/node-factory.js";
-import { shortId } from "../core/ids.js";
 import { requireString, textResult } from "./types.js";
 import type { MutationResult } from "./add-nodes.js";
 
@@ -65,36 +65,30 @@ export function duplicateNodes(store: DesignStore, args: Record<string, unknown>
     }
   }
 
-  // Le sous-arbre complet de chaque racine, dans l'ordre du document : l'ordre
-  // d'empilement relatif des copies reste celui des originaux.
-  const included = new Set(roots);
-  for (const rootId of roots) for (const descendant of descendantIds(current.nodes, rootId)) included.add(descendant);
-  const source = current.nodes.filter((node) => included.has(node.id));
-
   const copies: DesignNode[] = [];
   const createdRootIds: string[] = [];
 
   for (let copyIndex = 1; copyIndex <= count; copyIndex++) {
-    const idMap = new Map(source.map((node) => [node.id, shortId(node.type === "group" ? "g" : "n")]));
+    // Un sous-arbre complet par copie : les ids sont neufs et les liens
+    // parent/enfant recables (cf. src/core/clone.ts).
+    const clone = cloneSubtrees(current.nodes, roots);
+    const rootSet = new Set(clone.rootIds);
 
-    for (const node of source) {
-      const isRoot = roots.includes(node.id);
-      const copy: DesignNode = {
-        ...structuredClone(node),
-        id: idMap.get(node.id)!,
-        // Seules les racines sont décalées et reparentées : les descendants sont
-        // exprimés dans l'espace de leur parent et suivent donc tout seuls.
-        parentId: isRoot
-          ? parentId === undefined
-            ? node.parentId
-            : parentId
-          : (idMap.get(node.parentId ?? "") ?? node.parentId),
-        x: node.x + (isRoot ? offsetX * copyIndex : 0),
-        y: node.y + (isRoot ? offsetY * copyIndex : 0),
-      };
-      copies.push(copy);
-      if (isRoot) createdRootIds.push(copy.id);
+    for (const copy of clone.copies) {
+      // Seules les racines sont decalees et reparentees : les descendants sont
+      // exprimes dans l'espace de leur parent et suivent donc tout seuls.
+      if (!rootSet.has(copy.id)) {
+        copies.push(copy);
+        continue;
+      }
+      copies.push({
+        ...copy,
+        parentId: parentId === undefined ? copy.parentId : parentId,
+        x: copy.x + offsetX * copyIndex,
+        y: copy.y + offsetY * copyIndex,
+      });
     }
+    createdRootIds.push(...clone.rootIds);
   }
 
   const design = store.mutate(id, "agent", (draft) => {

@@ -13,7 +13,7 @@ import { DEFAULT_ICON_STROKE_WIDTH, ICON_GRID } from "./icons/index.js";
 
 export type NodeKind = RenderNode["type"];
 
-export const NODE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon", "group"];
+export const NODE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon", "group", "instance"];
 
 /** Types que l'utilisateur peut dessiner directement ; un groupe se cree a partir d'une selection. */
 export const DRAWABLE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon"];
@@ -46,6 +46,8 @@ export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
   },
   // Un groupe n'a pas de taille propre : elle est deduite de son contenu.
   group: { width: 0, height: 0 },
+  // Une instance non plus : sa taille est celle du composant qu'elle reproduit.
+  instance: { width: 0, height: 0 },
 };
 
 /** Champs stylistiques acceptés par type — tout le reste est refusé à la création comme au patch. */
@@ -56,6 +58,9 @@ export const NODE_STYLE_FIELDS: Record<NodeKind, ReadonlyArray<keyof RenderNode>
   text: ["text", "color", "fontSize", "fontFamily", "fontWeight", "fontStyle", "textAlign", "lineHeight"],
   icon: ["icon", "fill", "stroke", "strokeWidth"],
   group: [],
+  // Rien ne se surcharge dans une instance : son apparence est celle de son
+  // composant. Seul le lien lui-meme se change, ce qui l'echange de composant.
+  instance: ["componentId"],
 };
 
 /**
@@ -63,6 +68,9 @@ export const NODE_STYLE_FIELDS: Record<NodeKind, ReadonlyArray<keyof RenderNode>
  * et ne peuvent pas etre ecrits directement — ni par l'agent, ni par la GUI.
  */
 export const GROUP_DERIVED_FIELDS: ReadonlyArray<keyof RenderNode> = ["width", "height"];
+
+/** Types dont la taille est deduite du contenu, donc jamais ecrite directement. */
+export const SIZE_DERIVED_KINDS: readonly NodeKind[] = ["group", "instance"];
 
 export const NODE_GEOMETRY_FIELDS: ReadonlyArray<keyof RenderNode> = [
   "x",
@@ -80,6 +88,7 @@ const LABELS: Record<NodeKind, string> = {
   text: "Texte",
   icon: "Icône",
   group: "Groupe",
+  instance: "Instance",
 };
 
 export function defaultNodeName(type: NodeKind, index: number): string {
@@ -92,7 +101,8 @@ export function nodeKindLabel(type: NodeKind): string {
 
 /** Taille minimale garantissant qu'un noeud reste sélectionnable à la souris. */
 export function clampNodeSize(type: NodeKind, width: number, height: number): { width: number; height: number } {
-  if (type === "group") return { width, height }; // taille deduite du contenu
+  // Groupe et instance : taille deduite du contenu.
+  if (SIZE_DERIVED_KINDS.includes(type)) return { width, height };
   if (type === "line") return { width, height }; // les deltas négatifs encodent la direction
   // Une icone est carree : son trace l'est, et une boite rectangulaire ne
   // ferait que laisser du vide sur les cotes. Le cote suit la plus petite

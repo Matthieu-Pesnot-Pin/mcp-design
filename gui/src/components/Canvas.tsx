@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { groupTransform, nodeToSvg, normalizedBox, textMetrics } from '@shared/render'
 import { boundsOf, childrenByParent, computeLayout, spaceOriginOf, unionBoundsOf, type Box, type Layout } from '@shared/tree'
+import { expandInstances, instanceRootOf } from '@shared/instances'
 import { clickTarget, drillTarget, useDesignStore } from '../store/useDesignStore'
 import { rectsIntersect, round } from '../utils/nodes'
 import type { DesignNode, Tool } from '../types'
@@ -146,7 +147,12 @@ export function Canvas() {
   const [gestureTick, setGestureTick] = useState(0)
   const [rubberBand, setRubberBand] = useState<{ kind: 'create' | 'marquee'; box: Box } | null>(null)
 
-  const nodes = useMemo(() => design?.nodes ?? [], [design])
+  // Le canvas travaille sur les noeuds EXPANSÉS : chaque instance y est déjà
+  // remplacée par une copie du contenu de son composant, donc le rendu, les
+  // bornes et le survol n'ont pas une seule branche de plus. Ces copies n'ont
+  // pas d'existence en stockage : `instanceRootOf` ramène tout identifiant
+  // sélectionné vers l'instance elle-même.
+  const nodes = useMemo(() => expandInstances(design?.nodes ?? []), [design])
   const layout = useMemo(() => computeLayout(nodes), [nodes])
   const children = useMemo(() => childrenByParent(nodes), [nodes])
 
@@ -362,11 +368,13 @@ export function Canvas() {
 
     // Alt+clic vise l'élément exact ; le double-clic descend d'un cran vers lui ;
     // sinon on sélectionne son groupe le plus haut, ou le niveau déjà atteint.
-    const targetId = event.altKey
-      ? node.id
-      : doubleClick
-        ? drillTarget(nodes, node.id, store.selectedIds)
-        : clickTarget(nodes, node.id, store.selectedIds, false)
+    const targetId = instanceRootOf(
+      event.altKey
+        ? node.id
+        : doubleClick
+          ? drillTarget(nodes, node.id, store.selectedIds)
+          : clickTarget(nodes, node.id, store.selectedIds, false)
+    )
 
     if (event.shiftKey) {
       store.toggleSelection(targetId)

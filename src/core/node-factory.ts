@@ -4,6 +4,7 @@ import {
   NODE_DEFAULTS,
   NODE_GEOMETRY_FIELDS,
   NODE_STYLE_FIELDS,
+  SIZE_DERIVED_KINDS,
   clampNodeSize,
   defaultNodeName,
 } from "../../shared/node-defaults.js";
@@ -45,7 +46,23 @@ function requireIconName(value: unknown): string {
 
 /** Champs geometriques réellement modifiables pour un type donné. */
 function geometryFieldsFor(type: NodeType): ReadonlyArray<keyof DesignNode> {
-  return type === "group" ? GEOMETRY.filter((field) => !DERIVED.includes(field)) : GEOMETRY;
+  return SIZE_DERIVED_KINDS.includes(type) ? GEOMETRY.filter((field) => !DERIVED.includes(field)) : GEOMETRY;
+}
+
+/**
+ * Valide le lien d'un noeud `instance` vers son composant. L'existence du
+ * groupe cible, elle, est verifiee par `validateHierarchy` : elle depend de la
+ * planche entiere, pas du seul noeud.
+ */
+function requireComponentId(value: unknown): string {
+  const componentId = typeof value === "string" ? value.trim() : "";
+  if (componentId === "") {
+    throw new DesignError(
+      `An "instance" node needs a "componentId" field naming the GROUP it mirrors, e.g. { type: "instance", componentId: "g_card" }. ` +
+        `Build the block once with group_nodes, then instantiate it — editing the group then updates every instance at once.`
+    );
+  }
+  return componentId;
 }
 
 function readParentId(value: unknown): string | null {
@@ -104,6 +121,7 @@ export function buildNode(input: CreateNodeInput, existingIds: Set<string>, inde
     if (input[field] !== undefined) draft[field] = input[field];
   }
 
+  if (type === "instance") draft.componentId = requireComponentId(draft.componentId);
   if (type === "icon") {
     draft.icon = requireIconName(draft.icon);
     // Un calque nomme "Icône 7" ne dit rien au relecteur ; le nom de l'icone,
@@ -143,12 +161,17 @@ export function applyPatch(node: DesignNode, patch: Record<string, unknown>): De
   }
 
   if (node.type === "icon" && patch.icon !== undefined) next.icon = requireIconName(patch.icon);
+  // Changer le lien echange l'instance de composant, comme un "swap instance".
+  if (node.type === "instance" && patch.componentId !== undefined) next.componentId = requireComponentId(patch.componentId);
 
   const editable = ["name", "parentId", ...geometryFieldsFor(node.type), ...ALLOWED[node.type]];
   const unknownFields = Object.keys(patch).filter((key) => key !== "id" && !editable.includes(key as keyof DesignNode));
   if (unknownFields.length > 0) {
-    const derived = unknownFields.filter((key) => node.type === "group" && DERIVED.includes(key as keyof DesignNode));
-    const reason = derived.length > 0 ? ` The size of a group is derived from its content and cannot be set.` : "";
+    const derived = unknownFields.filter(
+      (key) => SIZE_DERIVED_KINDS.includes(node.type) && DERIVED.includes(key as keyof DesignNode)
+    );
+    const reason =
+      derived.length > 0 ? ` The size of a ${node.type} is derived from its content and cannot be set.` : "";
     throw new DesignError(
       `Field(s) [${unknownFields.join(", ")}] cannot be set on a "${node.type}" node.${reason} ` +
         `Allowed: ${editable.join(", ")}.`

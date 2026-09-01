@@ -10,7 +10,7 @@ import type { RenderNode } from "./render.js";
  */
 export const NODE_FIELD_DOCS = {
   id: "Explicit id. Generated when omitted; must be unique within the design.",
-  type: "Kind of node: rect, ellipse, line, text, icon or group.",
+  type: "Kind of node: rect, ellipse, line, text, icon, group or instance.",
   name: "Layer name shown in the GUI. Purely descriptive.",
   parentId:
     "Id of the containing group, or null for the root level of the artboard. " +
@@ -49,6 +49,13 @@ export const NODE_FIELD_DOCS = {
     "the result is sharp at any size, restyles in one field, and stays readable to whoever reads the design later. " +
     "Call search_icons to find a name from a description (it also understands synonyms, so \"basket\" finds \"shopping-cart\"). " +
     "The node's box is square: the drawing is scaled uniformly to fit it and centred, never stretched.",
+
+  componentId:
+    "Instance nodes only: id of the GROUP this instance mirrors. The group's content is NOT copied — it is resolved " +
+    "at render time, so editing the group updates every instance of it at once, and a repeated block stays a single " +
+    "node to read and to change. Whenever the same block appears more than once (cards, list rows, menu items, " +
+    "buttons), build it once as a group and add instances of it instead of duplicating it. " +
+    "Change this field to swap an instance over to another group; use detach_instances when one copy must diverge.",
 
   text: "Text content. It is NEVER auto-wrapped: only explicit \\n characters start a new line.",
   color: "CSS colour of the text.",

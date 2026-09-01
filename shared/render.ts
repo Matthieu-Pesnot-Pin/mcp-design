@@ -8,6 +8,7 @@
  */
 
 import { boundsOf, childrenByParent, computeLayout, normalizedBox, spaceOriginOf, type Box, type Layout } from "./tree.js";
+import { expandInstances } from "./instances.js";
 import {
   DEFAULT_ICON_STROKE_WIDTH,
   ICON_GRID,
@@ -23,10 +24,12 @@ export type { Box, Point } from "./tree.js";
 
 export interface RenderNode {
   id: string;
-  type: "rect" | "ellipse" | "line" | "text" | "icon" | "group";
+  type: "rect" | "ellipse" | "line" | "text" | "icon" | "group" | "instance";
   name: string;
   /** Groupe conteneur, ou null a la racine. Les coordonnees sont relatives a ce parent. */
   parentId: string | null;
+  /** Instance : id du groupe reproduit. Resolu par `expandInstances` avant tout rendu. */
+  componentId?: string;
   x: number;
   y: number;
   width: number;
@@ -221,7 +224,9 @@ export function iconElementToSvg([tag, attributes]: IconElement): string {
  * `documentToSvg` (serveur) ou par le canvas (navigateur).
  */
 export function nodeToSvg(node: RenderNode): string {
-  if (node.type === "group") return "";
+  // Un groupe est un conteneur ; une instance n'atteint jamais le rendu, elle
+  // est remplacee par un groupe en amont par `expandInstances`.
+  if (node.type === "group" || node.type === "instance") return "";
 
   const transform = rotationTransform(node);
   const transformAttr = transform ? ` transform="${transform}"` : "";
@@ -314,8 +319,11 @@ function renderSiblings(
 }
 
 export function documentToSvg(doc: RenderDocument): string {
-  const layout = computeLayout(doc.nodes);
-  const children = childrenByParent(doc.nodes);
+  // Les instances sont resolues ici, une fois pour toutes : en dessous, il n'y
+  // a plus que des groupes ordinaires.
+  const nodes = expandInstances(doc.nodes);
+  const layout = computeLayout(nodes);
+  const children = childrenByParent(nodes);
 
   // Un groupe devient un <g> : ses enfants gardent leurs coordonnées locales,
   // c'est la transformation du conteneur qui les place.
@@ -337,11 +345,12 @@ export function documentToSvg(doc: RenderDocument): string {
  * que `computeLayout`, donc directement sur la boîte englobante de l'élément.
  */
 export function subtreeToSvg(doc: RenderDocument, nodeId: string, padding = 0): string {
-  const node = doc.nodes.find((candidate) => candidate.id === nodeId);
+  const nodes = expandInstances(doc.nodes);
+  const node = nodes.find((candidate) => candidate.id === nodeId);
   if (!node) throw new Error(`Node "${nodeId}" not found in design "${doc.name}".`);
 
-  const layout = computeLayout(doc.nodes);
-  const children = childrenByParent(doc.nodes);
+  const layout = computeLayout(nodes);
+  const children = childrenByParent(nodes);
   const bounds = boundsOf(layout, nodeId);
 
   const region: Box = {

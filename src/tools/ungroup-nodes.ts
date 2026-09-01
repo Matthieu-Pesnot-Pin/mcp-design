@@ -1,5 +1,6 @@
 import type { DesignStore } from "../core/design-store.js";
 import type { DesignNode } from "../../shared/schemas/design.schema.js";
+import { survivingInstancesOf } from "../core/hierarchy.js";
 import { DesignError } from "../core/node-factory.js";
 import { requireString, textResult } from "./types.js";
 import type { MutationResult } from "./add-nodes.js";
@@ -27,6 +28,17 @@ export function ungroupNodes(store: DesignStore, args: Record<string, unknown> |
   });
 
   const dissolved = new Set(groups.map((group) => group.id));
+
+  // Dissoudre un composant reviendrait a le supprimer pour ses instances.
+  const orphaned = survivingInstancesOf(current.nodes, dissolved);
+  if (orphaned.length > 0) {
+    throw new DesignError(
+      `Group(s) ${[...new Set(orphaned.map((instance) => instance.componentId))].join(", ")} are still mirrored by ` +
+        `${orphaned.length} instance(s) (${orphaned.map((instance) => instance.id).join(", ")}). ` +
+        `Run detach_instances on them first, or delete them.`
+    );
+  }
+
   let promoted = 0;
 
   const design = store.mutate(id, "agent", (draft) => {

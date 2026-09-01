@@ -22,6 +22,7 @@ export function LayerPanel() {
 
   const children = childrenByParent(design.nodes)
   const hasGroupSelected = design.nodes.some((node) => selectedIds.includes(node.id) && node.type === 'group')
+  const byId = new Map(design.nodes.map((node) => [node.id, node]))
 
   const renderLevel = (parentId: string | null, depth: number): React.ReactNode[] =>
     [...(children.get(parentId) ?? [])].reverse().flatMap((node: DesignNode) => {
@@ -54,6 +55,13 @@ export function LayerPanel() {
               <span className="layer-kind">{nodeKindLabel(node.type)}</span>
               <span className="layer-name">{node.name}</span>
               {isGroup && <span className="layer-count">{count}</span>}
+              {/* Une instance n'a pas de contenu propre : ce qu'elle reproduit
+                  est la seule chose utile à lire sur sa ligne. */}
+              {node.type === 'instance' && (
+                <span className="layer-count" title="Instance liée à ce groupe">
+                  ◇ {byId.get(node.componentId ?? '')?.name ?? '?'}
+                </span>
+              )}
             </button>
           </div>
         </li>
