@@ -1,6 +1,6 @@
 {
   "name": "@imenam/mcp-design",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "main": "dist/src/index.js",
   "directories": {
     "test": "test"
