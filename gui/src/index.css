@@ -65,8 +65,9 @@ code {
 
 .app {
   display: grid;
-  /* Les largeurs des rails sont pilotées par les poignees de redimensionnement. */
-  grid-template-columns: var(--left-panel, 232px) 5px minmax(0, 1fr) 5px var(--right-panel, 268px);
+  /* Les colonnes sont calculees dans App : elles dependent des largeurs
+     redimensionnables et de la visibilite de chaque rail. */
+  grid-template-columns: 232px 5px minmax(0, 1fr) 5px 268px;
   height: 100%;
 }
 
@@ -108,6 +109,7 @@ code {
 }
 
 .workspace {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -131,7 +133,17 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
-.tool-group {
+/* Outils en icones seules, deux par ligne (palette flottante). */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 4px;
+  align-content: center;
+  justify-items: stretch;
+}
+
+/* Groupe d'icones de la barre du haut, sur une seule ligne. */
+.tool-row {
   display: flex;
   gap: 4px;
   align-items: center;
@@ -140,8 +152,10 @@ code {
 .tool-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -168,10 +182,6 @@ code {
   width: 15px;
   text-align: center;
   flex-shrink: 0;
-}
-
-.tool-label {
-  font-size: 12px;
 }
 
 .zoom-control {
@@ -214,6 +224,59 @@ code {
 
 .status-chip[data-state='error'] {
   color: var(--danger);
+}
+
+/* --- Palette d'outils flottante ------------------------------------------ */
+
+/* Posee sur le canvas, en bas a gauche : au repos elle se reduit a un seul
+   bouton, pour ne pas manger d'espace dans une interface ou les outils
+   servent rarement. */
+.tool-palette {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
+}
+
+.tool-palette[data-collapsed] {
+  opacity: 0.7;
+}
+
+.tool-palette[data-collapsed]:hover,
+.tool-palette[data-collapsed]:focus-within {
+  opacity: 1;
+}
+
+.tool-palette-collapse {
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.tool-palette-collapse:hover {
+  background: var(--shell);
+  color: var(--ink);
+}
+
+/* La palette touche le bas du canvas : son selecteur d'icones s'ouvre donc
+   vers le haut, sinon il sortirait de la fenetre. */
+.tool-palette .icon-picker {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 /* --- Canvas -------------------------------------------------------------- */
@@ -798,6 +861,12 @@ code {
 .tool-popover-anchor {
   position: relative;
   display: inline-flex;
+}
+
+/* Dans la grille d'outils, l'ancre du selecteur d'icones occupe sa cellule
+   entiere pour que son bouton s'aligne sur les autres. */
+.tool-grid > .tool-popover-anchor {
+  display: flex;
 }
 
 .icon-picker {
