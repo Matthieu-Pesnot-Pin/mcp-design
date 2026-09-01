@@ -33,6 +33,6 @@ export interface DesignSummary {
   pendingChanges: number
 }
 
-export type Tool = 'select' | 'rect' | 'ellipse' | 'line' | 'text'
+export type Tool = 'select' | 'rect' | 'ellipse' | 'line' | 'text' | 'icon'
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error'

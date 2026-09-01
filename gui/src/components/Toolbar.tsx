@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { useDesignStore } from '../store/useDesignStore'
+import { IconPicker } from './IconPicker'
 import type { Tool } from '../types'
 
 const TOOLS: Array<{ id: Tool; label: string; shortcut: string; glyph: string }> = [
@@ -14,6 +16,9 @@ const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3]
 export function Toolbar() {
   const tool = useDesignStore((state) => state.tool)
   const setTool = useDesignStore((state) => state.setTool)
+  const pendingIcon = useDesignStore((state) => state.pendingIcon)
+  const setPendingIcon = useDesignStore((state) => state.setPendingIcon)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const zoom = useDesignStore((state) => state.zoom)
   const setZoom = useDesignStore((state) => state.setZoom)
   const undo = useDesignStore((state) => state.undo)
@@ -47,6 +52,31 @@ export function Toolbar() {
             <span className="tool-label">{entry.label}</span>
           </button>
         ))}
+
+        {/* L'outil icône ouvre d'abord le sélecteur : poser une icône suppose
+            d'avoir choisi laquelle, contrairement à un rectangle. */}
+        <div className="tool-popover-anchor">
+          <button
+            type="button"
+            className="tool-button"
+            data-active={tool === 'icon' || undefined}
+            title={`Icône — ${pendingIcon} (I)`}
+            onClick={() => setPickerOpen((open) => !open)}
+          >
+            <span className="tool-glyph">☆</span>
+            <span className="tool-label">Icône</span>
+          </button>
+          {pickerOpen && (
+            <IconPicker
+              current={pendingIcon}
+              onPick={(name) => {
+                setPendingIcon(name)
+                setPickerOpen(false)
+              }}
+              onClose={() => setPickerOpen(false)}
+            />
+          )}
+        </div>
       </div>
 
       <div className="tool-group">

@@ -37,6 +37,8 @@ interface DesignState {
   error: string | null
 
   tool: Tool
+  /** Icône que l'outil « icône » posera au prochain clic — la dernière choisie. */
+  pendingIcon: string
   selectedIds: string[]
   editingTextId: string | null
   /** Groupes dépliés dans le panneau des calques. */
@@ -54,6 +56,8 @@ interface DesignState {
   setConnected: (connected: boolean) => void
   setError: (error: string | null) => void
   setTool: (tool: Tool) => void
+  /** Choisit l'icône à poser et arme l'outil dans la foulée. */
+  setPendingIcon: (icon: string) => void
   setZoom: (zoom: number) => void
   setPan: (pan: { x: number; y: number }) => void
   /** Zoome en gardant fixe le point du document situé sous `screen`. */
@@ -180,6 +184,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
     error: null,
 
     tool: 'select',
+    pendingIcon: 'star',
     selectedIds: [],
     editingTextId: null,
     expandedIds: [],
@@ -194,6 +199,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
     setConnected: (connected) => set({ connected }),
     setError: (error) => set({ error }),
     setTool: (tool) => set({ tool, editingTextId: null }),
+    setPendingIcon: (pendingIcon) => set({ pendingIcon, tool: 'icon', editingTextId: null }),
     setZoom: (zoom) => set({ zoom: clampZoom(zoom) }),
     setPan: (pan) => set({ pan }),
 

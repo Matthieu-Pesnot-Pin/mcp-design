@@ -7,6 +7,8 @@ import {
   clampNodeSize,
   defaultNodeName,
 } from "../../shared/node-defaults.js";
+import { CORE_ICONS, hasIcon, iconCount } from "../../shared/icons/index.js";
+import { suggestIcons } from "../../shared/icons/search.js";
 import { shortId } from "./ids.js";
 
 export class DesignError extends Error {}
@@ -14,6 +16,32 @@ export class DesignError extends Error {}
 const GEOMETRY = NODE_GEOMETRY_FIELDS as ReadonlyArray<keyof DesignNode>;
 const ALLOWED = NODE_STYLE_FIELDS as Record<NodeType, ReadonlyArray<keyof DesignNode>>;
 const DERIVED = GROUP_DERIVED_FIELDS as ReadonlyArray<keyof DesignNode>;
+
+/**
+ * Valide le nom d'icone d'un noeud `icon`.
+ *
+ * Un nom refuse doit repartir avec une piste : sans cela l'agent retombe sur ce
+ * qu'on cherche precisement a eviter — reconstituer l'icone a coups d'ellipses.
+ * Les suggestions passent par les synonymes de la bibliotheque, ce qui rattrape
+ * aussi bien une faute qu'un renommage ("home" -> "house").
+ */
+function requireIconName(value: unknown): string {
+  const name = typeof value === "string" ? value.trim() : "";
+  if (name === "") {
+    throw new DesignError(
+      `An "icon" node needs an "icon" field naming the icon to draw, e.g. "shopping-cart". ` +
+        `Call search_icons to find one among the ${iconCount()} available, or pick from: ${CORE_ICONS.slice(0, 24).join(", ")}...`
+    );
+  }
+  if (hasIcon(name)) return name;
+
+  const suggestions = suggestIcons(name);
+  throw new DesignError(
+    `Unknown icon "${name}".` +
+      (suggestions.length > 0 ? ` Closest matches: ${suggestions.join(", ")}.` : "") +
+      ` Call search_icons to search the ${iconCount()} available icons by description.`
+  );
+}
 
 /** Champs geometriques réellement modifiables pour un type donné. */
 function geometryFieldsFor(type: NodeType): ReadonlyArray<keyof DesignNode> {
@@ -49,7 +77,9 @@ export interface CreateNodeInput {
 export function buildNode(input: CreateNodeInput, existingIds: Set<string>, index: number): DesignNode {
   const type = input.type as NodeType;
   if (!type || !(type in NODE_DEFAULTS)) {
-    throw new DesignError(`Unknown node type "${String(input.type)}". Expected one of: rect, ellipse, line, text.`);
+    throw new DesignError(
+      `Unknown node type "${String(input.type)}". Expected one of: ${Object.keys(NODE_DEFAULTS).join(", ")}.`
+    );
   }
 
   const id = typeof input.id === "string" && input.id.trim() !== "" ? input.id.trim() : shortId("n");
@@ -72,6 +102,13 @@ export function buildNode(input: CreateNodeInput, existingIds: Set<string>, inde
   }
   for (const field of ALLOWED[type]) {
     if (input[field] !== undefined) draft[field] = input[field];
+  }
+
+  if (type === "icon") {
+    draft.icon = requireIconName(draft.icon);
+    // Un calque nomme "Icône 7" ne dit rien au relecteur ; le nom de l'icone,
+    // lui, porte deja le sens. C'est le nom par defaut le plus utile.
+    if (!(typeof input.name === "string" && input.name.trim() !== "")) draft.name = String(draft.icon);
   }
 
   const size = clampNodeSize(type, Number(draft.width), Number(draft.height));
@@ -104,6 +141,8 @@ export function applyPatch(node: DesignNode, patch: Record<string, unknown>): De
   for (const field of ALLOWED[node.type]) {
     if (patch[field] !== undefined) next[field] = patch[field];
   }
+
+  if (node.type === "icon" && patch.icon !== undefined) next.icon = requireIconName(patch.icon);
 
   const editable = ["name", "parentId", ...geometryFieldsFor(node.type), ...ALLOWED[node.type]];
   const unknownFields = Object.keys(patch).filter((key) => key !== "id" && !editable.includes(key as keyof DesignNode));

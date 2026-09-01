@@ -10,7 +10,7 @@ import type { RenderNode } from "./render.js";
  */
 export const NODE_FIELD_DOCS = {
   id: "Explicit id. Generated when omitted; must be unique within the design.",
-  type: "Kind of node: rect, ellipse, line, text or group.",
+  type: "Kind of node: rect, ellipse, line, text, icon or group.",
   name: "Layer name shown in the GUI. Purely descriptive.",
   parentId:
     "Id of the containing group, or null for the root level of the artboard. " +
@@ -34,10 +34,21 @@ export const NODE_FIELD_DOCS = {
   rotation: "Rotation in degrees, clockwise, around the centre of the bounding box. 0 = upright.",
   opacity: "Opacity, from 0 (fully transparent) to 1 (fully opaque).",
 
-  fill: 'CSS colour filling the interior, e.g. "#ffffff" or "rgba(0,0,0,0.4)". rect and ellipse only.',
-  stroke: "CSS colour of the outline — of the stroke itself on a line node.",
-  strokeWidth: "Thickness of the outline, in pixels. 0 or omitted means no outline.",
+  fill: 'CSS colour filling the interior, e.g. "#ffffff" or "rgba(0,0,0,0.4)". rect, ellipse and icon. On an icon it is "none" by default — the shape is drawn by its stroke.',
+  stroke: "CSS colour of the outline — of the stroke itself on a line node, of the whole drawing on an icon.",
+  strokeWidth:
+    "Thickness of the outline, in pixels. 0 or omitted means no outline. " +
+    "On an ICON this is the only exception to the pixel rule: it is expressed in the icon's own 24x24 grid " +
+    "(2 = the library's regular weight, 1.5 = light, 2.5 = bold), so it scales with the icon. " +
+    "An icon 96px wide with strokeWidth 2 draws an 8px line on screen — never raise it to compensate for a large size.",
   radius: "Corner radius, in pixels. rect only; clamped to half of the shortest side.",
+
+  icon:
+    "Name of the icon to draw, from the bundled Lucide library, e.g. \"shopping-cart\", \"circle-check\", \"user\". " +
+    "Required on an icon node. NEVER approximate an icon out of rects, ellipses and lines: name it here instead — " +
+    "the result is sharp at any size, restyles in one field, and stays readable to whoever reads the design later. " +
+    "Call search_icons to find a name from a description (it also understands synonyms, so \"basket\" finds \"shopping-cart\"). " +
+    "The node's box is square: the drawing is scaled uniformly to fit it and centred, never stretched.",
 
   text: "Text content. It is NEVER auto-wrapped: only explicit \\n characters start a new line.",
   color: "CSS colour of the text.",

@@ -116,6 +116,16 @@ function resizeNode(node: DesignNode, handle: HandleId, dx: number, dy: number):
     height = minSize
   }
 
+  // Une icône reste carrée, comme côté serveur : son tracé l'est, et une boîte
+  // rectangulaire ne ferait qu'ajouter du vide sur les côtés.
+  if (node.type === 'icon') {
+    const side = Math.max(minSize, Math.min(width, height))
+    if (handle.includes('w')) x = box.x + box.width - side
+    if (handle.includes('n')) y = box.y + box.height - side
+    width = side
+    height = side
+  }
+
   return { x: round(x), y: round(y), width: round(width), height: round(height) }
 }
 
@@ -259,17 +269,24 @@ export function Canvas() {
             y: round(gesture.origin.y),
             ...(isClick ? {} : { width: round(dx), height: round(dy) }),
           })
-        } else if (isClick) {
-          // Simple clic : forme à la taille par défaut, ancrée au point cliqué.
-          store.addNode(gesture.type, { x: round(gesture.origin.x), y: round(gesture.origin.y) })
         } else {
-          const box = boxFromPoints(gesture.origin, gesture.point)
-          store.addNode(gesture.type, {
-            x: round(box.x),
-            y: round(box.y),
-            width: round(box.width),
-            height: round(box.height),
-          })
+          // Une icône se pose avec le dessin choisi dans la barre d'outils ; le
+          // reste des types n'a pas de contenu à transporter.
+          const content = gesture.type === 'icon' ? { icon: store.pendingIcon } : {}
+
+          if (isClick) {
+            // Simple clic : forme à la taille par défaut, ancrée au point cliqué.
+            store.addNode(gesture.type, { ...content, x: round(gesture.origin.x), y: round(gesture.origin.y) })
+          } else {
+            const box = boxFromPoints(gesture.origin, gesture.point)
+            store.addNode(gesture.type, {
+              ...content,
+              x: round(box.x),
+              y: round(box.y),
+              width: round(box.width),
+              height: round(box.height),
+            })
+          }
         }
       } else if (gesture.kind === 'marquee') {
         const box = boxFromPoints(gesture.origin, gesture.point)

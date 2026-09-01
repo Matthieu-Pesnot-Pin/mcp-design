@@ -13,7 +13,8 @@
     "start": "node dist/src/index.js",
     "test": "node --test \"dist/test/*.test.js\"",
     "prepublishOnly": "npm run build",
-    "release": "npm version patch && npm publish && git push --follow-tags"
+    "release": "npm version patch && npm publish && git push --follow-tags",
+    "generate-icons": "node scripts/generate-icons.js"
   },
   "keywords": [
     "mcp",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.3.0",
+    "lucide-static": "^1.38.0",
     "typescript": "^7.0.2"
   }
 }

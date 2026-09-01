@@ -14,6 +14,7 @@ import { DesignStore } from "./core/design-store.js";
 import { NODE_DEFAULTS } from "./core/node-factory.js";
 import { EXPORT_FORMATS } from "./core/export.js";
 import { MIN_LINE_HEIGHT_PX } from "../shared/render.js";
+import { CORE_ICONS, iconCount } from "../shared/icons/index.js";
 import { NODE_FIELD_DOCS } from "../shared/node-fields.js";
 import { REORDER_DIRECTIONS } from "../shared/tree.js";
 import { normalizeDesignGroup } from "../shared/schemas/design.schema.js";
@@ -34,6 +35,7 @@ import { markSynced } from "./tools/mark-synced.js";
 import { exportDesignTool } from "./tools/export-design.js";
 import { screenshotDesignTool } from "./tools/screenshot-design.js";
 import { reorderNodesTool } from "./tools/reorder-nodes.js";
+import { searchIconsTool, DEFAULT_ICON_RESULTS, MAX_ICON_RESULTS } from "./tools/search-icons.js";
 import type { ToolResult } from "./tools/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -352,8 +354,23 @@ const NODE_FIELDS_DOC =
   "height are derived from its content and cannot be set. " +
   "Fields accepted per type — rect: fill, stroke, strokeWidth, radius; ellipse: fill, stroke, strokeWidth; " +
   "line: stroke, strokeWidth (the line goes from (x, y) to (x + width, y + height)); " +
-  "text: text, color, fontSize, fontFamily, fontWeight, fontStyle, textAlign, lineHeight. " +
+  "text: text, color, fontSize, fontFamily, fontWeight, fontStyle, textAlign, lineHeight; " +
+  "icon: icon (required — the name of the drawing), fill, stroke, strokeWidth. " +
   "Any field left out falls back to a sensible default, so a node can be created from its type alone.";
+
+/**
+ * Consigne sur les icones, repetee partout ou un noeud se cree.
+ *
+ * Sans elle, un agent qui n'a que des formes a sa disposition approxime une
+ * icone avec trois ellipses et deux traits : le rendu est mediocre, et la
+ * maquette relue plus tard ne dit plus ce que ce tas de formes representait.
+ */
+const ICON_DOC =
+  `DRAW ICONS WITH AN "icon" NODE, NEVER OUT OF SHAPES. ${iconCount()} icons (Lucide) are built in: give the icon's name in the "icon" field ` +
+  `and the drawing is resolved at render time — sharp at any size, restyled with a single field, and still readable to whoever opens the design later. ` +
+  `Assembling a cart, a bell or a chevron out of rects, ellipses and lines is the failure mode to avoid. ` +
+  `Common names, enough for most interfaces: ${CORE_ICONS.join(", ")}. ` +
+  `For anything else, call search_icons with a description — it also matches synonyms.`;
 
 /**
  * Propriétés d'un noeud exposées à l'agent. Les descriptions viennent de
@@ -374,6 +391,7 @@ const NODE_PROPERTIES = {
   stroke: { type: "string", description: NODE_FIELD_DOCS.stroke },
   strokeWidth: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.strokeWidth },
   radius: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.radius },
+  icon: { type: "string", description: NODE_FIELD_DOCS.icon },
   text: { type: "string", description: NODE_FIELD_DOCS.text },
   color: { type: "string", description: NODE_FIELD_DOCS.color },
   fontSize: { type: "number", exclusiveMinimum: 0, description: NODE_FIELD_DOCS.fontSize },
@@ -474,7 +492,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         `Add one or more nodes on top of the design. Node types: ${Object.keys(NODE_DEFAULTS).join(", ")}. ` +
         NODE_FIELDS_DOC +
         " Nodes are drawn in array order, so the last one added sits on top. " +
-        HIERARCHY_DOC,
+        HIERARCHY_DOC +
+        " " +
+        ICON_DOC,
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -485,7 +505,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: {
               type: "object",
               properties: {
-                type: { type: "string", enum: ["rect", "ellipse", "line", "text", "group"], description: NODE_FIELD_DOCS.type },
+                type: {
+                  type: "string",
+                  enum: ["rect", "ellipse", "line", "text", "icon", "group"],
+                  description: NODE_FIELD_DOCS.type,
+                },
                 ...NODE_PROPERTIES,
               },
               required: ["type"],
@@ -716,6 +740,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "search_icons",
+      description:
+        `Find an icon by description among the ${iconCount()} built into the canvas (Lucide), and get its name for the "icon" field of an "icon" node. ` +
+        `Search in English, one concept at a time ("cart", "warning", "user profile"); synonyms are matched too, so "basket" finds "shopping-cart". ` +
+        `The common icons are already listed in add_nodes — call this tool for anything they do not cover, not before every icon.`,
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: 'What the icon should depict, e.g. "shopping cart", "download", "alert".' },
+          limit: {
+            type: "number",
+            description: `How many results to return (default ${DEFAULT_ICON_RESULTS}, max ${MAX_ICON_RESULTS}).`,
+          },
+          preview: {
+            type: "boolean",
+            description: "Return a thumbnail sheet of the results alongside their names (default true). Set false to save context.",
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
       name: "reconnect_gui",
       description:
         "Relaunch the GUI worker and re-register it with the proxy. Use it when the canvas is unreachable, or after starting the proxy server.",
@@ -819,6 +865,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "screenshot_design":
         return screenshotDesignTool(store, params);
+
+      case "search_icons":
+        return searchIconsTool(params);
 
       case "reconnect_gui":
         return await reconnectGui(params);

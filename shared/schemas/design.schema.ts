@@ -18,7 +18,7 @@ import { NODE_FIELD_DOCS } from "../node-fields.js";
  * d'un noeud sont exprimees dans l'espace de son parent.
  */
 
-export const NODE_TYPES = ["rect", "ellipse", "line", "text", "group"] as const;
+export const NODE_TYPES = ["rect", "ellipse", "line", "text", "icon", "group"] as const;
 export const NodeTypeSchema = z.enum(NODE_TYPES);
 export type NodeType = z.infer<typeof NodeTypeSchema>;
 
@@ -52,6 +52,13 @@ export const DesignNodeSchema = z.object({
   stroke: z.string().describe(NODE_FIELD_DOCS.stroke).optional(),
   strokeWidth: z.number().min(0).describe(NODE_FIELD_DOCS.strokeWidth).optional(),
   radius: z.number().min(0).describe(NODE_FIELD_DOCS.radius).optional(),
+
+  /**
+   * Icone — un NOM, jamais un trace. Le SVG est resolu au rendu depuis la
+   * bibliotheque embarquee : le fichier reste lisible, l'icone se restyle sans
+   * se redessiner, et un agent qui relit le design sait ce qu'elle represente.
+   */
+  icon: z.string().describe(NODE_FIELD_DOCS.icon).optional(),
 
   // Texte — fontSize et lineHeight sont tous deux en PIXELS.
   text: z.string().describe(NODE_FIELD_DOCS.text).optional(),

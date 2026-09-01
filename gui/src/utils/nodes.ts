@@ -38,6 +38,10 @@ export function createNode(type: NodeKind, patch: Partial<Omit<DesignNode, 'id' 
     ...patch,
   } as DesignNode
 
+  // Comme côté serveur : le nom d'une icône vaut mieux comme nom de calque que
+  // « Icône 7 », qui ne dit rien de ce qu'elle représente.
+  if (type === 'icon' && base.icon && patch.name === undefined) base.name = base.icon
+
   const size = clampNodeSize(type, base.width, base.height)
   return { ...base, width: size.width, height: size.height }
 }

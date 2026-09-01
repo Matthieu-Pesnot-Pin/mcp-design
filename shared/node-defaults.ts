@@ -1,4 +1,5 @@
 import type { RenderNode } from "./render.js";
+import { DEFAULT_ICON_STROKE_WIDTH, ICON_GRID } from "./icons/index.js";
 
 /**
  * Valeurs par défaut et champs autorisés par type de noeud.
@@ -12,10 +13,10 @@ import type { RenderNode } from "./render.js";
 
 export type NodeKind = RenderNode["type"];
 
-export const NODE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "group"];
+export const NODE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon", "group"];
 
 /** Types que l'utilisateur peut dessiner directement ; un groupe se cree a partir d'une selection. */
-export const DRAWABLE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text"];
+export const DRAWABLE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon"];
 
 export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
   rect: { width: 200, height: 120, fill: "#e8e8e6", stroke: "#1a1a18", strokeWidth: 1, radius: 8 },
@@ -34,6 +35,15 @@ export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
     // En pixels, comme x/y/fontSize — jamais un multiplicateur.
     lineHeight: 32,
   },
+  // Taille de la grille de Lucide : une icone posee sans consigne rend au
+  // format pour lequel son trace a ete dessine.
+  icon: {
+    width: ICON_GRID,
+    height: ICON_GRID,
+    fill: "none",
+    stroke: "#1a1a18",
+    strokeWidth: DEFAULT_ICON_STROKE_WIDTH,
+  },
   // Un groupe n'a pas de taille propre : elle est deduite de son contenu.
   group: { width: 0, height: 0 },
 };
@@ -44,6 +54,7 @@ export const NODE_STYLE_FIELDS: Record<NodeKind, ReadonlyArray<keyof RenderNode>
   ellipse: ["fill", "stroke", "strokeWidth"],
   line: ["stroke", "strokeWidth"],
   text: ["text", "color", "fontSize", "fontFamily", "fontWeight", "fontStyle", "textAlign", "lineHeight"],
+  icon: ["icon", "fill", "stroke", "strokeWidth"],
   group: [],
 };
 
@@ -67,6 +78,7 @@ const LABELS: Record<NodeKind, string> = {
   ellipse: "Ellipse",
   line: "Ligne",
   text: "Texte",
+  icon: "Icône",
   group: "Groupe",
 };
 
@@ -82,6 +94,13 @@ export function nodeKindLabel(type: NodeKind): string {
 export function clampNodeSize(type: NodeKind, width: number, height: number): { width: number; height: number } {
   if (type === "group") return { width, height }; // taille deduite du contenu
   if (type === "line") return { width, height }; // les deltas négatifs encodent la direction
+  // Une icone est carree : son trace l'est, et une boite rectangulaire ne
+  // ferait que laisser du vide sur les cotes. Le cote suit la plus petite
+  // dimension demandee, ce qui rend un cadrage a la souris previsible.
+  if (type === "icon") {
+    const side = Math.max(1, Math.min(Math.abs(width), Math.abs(height)));
+    return { width: side, height: side };
+  }
   if (type === "text") return { width: Math.max(20, Math.abs(width)), height: Math.max(16, Math.abs(height)) };
   return { width: Math.max(1, Math.abs(width)), height: Math.max(1, Math.abs(height)) };
 }

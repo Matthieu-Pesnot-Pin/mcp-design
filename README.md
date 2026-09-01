@@ -86,7 +86,7 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 | `group_nodes` | Enveloppe des éléments dans un nouveau groupe, sans rien déplacer à l'écran. |
 | `ungroup_nodes` | Dissout des groupes : leur contenu remonte d'un niveau, toujours sans bouger. |
 
-Cinq types d'éléments : `rect`, `ellipse`, `line`, `text` et `group`. Seul `type` est obligatoire ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
+Six types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon` et `group`. Seul `type` est obligatoire — sauf pour `icon`, qui a besoin du nom de l'icône ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
 
 **Champs communs** — `name`, `parentId`, `x`, `y`, `width`, `height` (en pixels, origine en haut à gauche), `rotation` (degrés, autour du centre de la boîte), `opacity` (0–1).
 
@@ -98,7 +98,34 @@ Cinq types d'éléments : `rect`, `ellipse`, `line`, `text` et `group`. Seul `ty
 | `ellipse` | `fill`, `stroke`, `strokeWidth` |
 | `line` | `stroke`, `strokeWidth` — le trait va de `(x, y)` à `(x + width, y + height)`, donc les deltas négatifs encodent la direction |
 | `text` | `text`, `color`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`, `textAlign`, `lineHeight` (en px) |
+| `icon` | `icon` (obligatoire — le nom du dessin), `fill`, `stroke`, `strokeWidth` |
 | `group` | aucun — c'est un pur conteneur |
+
+### Icônes
+
+Un agent qui n'a que des formes à sa disposition finit par approximer une icône avec trois ellipses et deux traits : le rendu est médiocre, et la maquette relue plus tard ne dit plus ce que ce tas de formes représentait. Le type `icon` répond exactement à ça — **1791 icônes [Lucide](https://lucide.dev) (licence ISC) sont embarquées** dans le paquet.
+
+```json
+{ "type": "icon", "icon": "shopping-cart", "x": 24, "y": 18, "width": 24, "height": 24, "stroke": "#1a1a18" }
+```
+
+Le nœud stocke le **nom**, jamais le tracé : le JSON reste lisible — `shopping-cart` dit à l'agent qui le relit ce que la forme représente —, un nœud `icon` pèse moins qu'un `rect`, et changer d'icône est un `update_nodes` d'un seul champ. Le SVG est résolu au rendu depuis [`shared/icons/`](shared/icons/), donc le canvas, l'export et la capture dessinent rigoureusement la même chose.
+
+| Outil | Effet |
+|---|---|
+| `search_icons` | Cherche une icône par description (`query`), en anglais et par synonymes — « basket » sort `shopping-cart`. Renvoie les noms **et** une planche de vignettes, sauf si `preview: false`. |
+
+Les icônes les plus courantes sont listées directement dans la description d'`add_nodes` (`CORE_ICONS` dans [`shared/icons/index.ts`](shared/icons/index.ts)) : habiller une interface ordinaire ne demande aucun aller-retour. `search_icons` sert à la traîne longue. Un nom refusé repart avec des suggestions issues des synonymes, ce qui rattrape aussi bien une faute qu'un renommage de la bibliothèque (`home` → `house`).
+
+Trois règles à connaître :
+
+- **`strokeWidth` est la seule exception à la règle du pixel** : il s'exprime dans la grille 24 × 24 de l'icône (2 = graisse normale, 1.5 = fine, 2.5 = grasse). Une icône de 96 px avec `strokeWidth: 2` dessine un trait de 8 px à l'écran — le trait suit la taille, il n'y a rien à compenser.
+- **La boîte est carrée** : `width` et `height` sont ramenés au plus petit des deux, et le tracé est mis à l'échelle uniformément puis centré. Jamais déformé.
+- **Un nom inconnu ne casse rien** : l'icône est remplacée par un carré en pointillés avec un `?`. Le même SVG servant au canvas, à l'export et à la capture, une exception y serait fatale partout à la fois — un design ouvert après une mise à jour de la bibliothèque doit rester ouvrable, et montrer *où* est le problème.
+
+Côté GUI, l'outil « Icône » de la barre d'outils (raccourci `I`) ouvre un sélecteur cherchable, et l'inspecteur permet de remplacer l'icône d'un élément existant. L'index de synonymes y est chargé à la demande, pour ne pas peser sur le premier affichage du canvas.
+
+La bibliothèque est figée dans le dépôt par `npm run generate-icons` ([`scripts/generate-icons.js`](scripts/generate-icons.js)) : ni le serveur publié ni le bundle de la GUI ne dépendent de Lucide à l'exécution, et la géométrie d'un design ne peut pas changer au gré d'un `npm install`.
 
 ### Hiérarchie
 
@@ -170,11 +197,11 @@ mark_synced   { design_id: "landing" }        ← acquittement
 
 Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 
-- **Outils** — sélection, rectangle, ellipse, ligne, texte. Glisser pour dimensionner, cliquer pour poser à la taille par défaut.
+- **Outils** — sélection, rectangle, ellipse, ligne, texte, icône. Glisser pour dimensionner, cliquer pour poser à la taille par défaut. L'outil icône ouvre d'abord son sélecteur : poser une icône suppose d'avoir choisi laquelle.
 - **Édition** — déplacement au glisser, 8 poignées de redimensionnement (2 extrémités pour une ligne), sélection multiple au rectangle d'encadrement ou au Maj+clic.
 - **Groupes** — `Ctrl+G` groupe la sélection, `Ctrl+Maj+G` la dissout. Un clic dans le canvas sélectionne le **groupe le plus haut** ; `Alt+clic` vise l'élément exact à l'intérieur. Déplacer un groupe déplace tout son contenu.
 - **Texte** — double-clic pour éditer en place, avec la même métrique qu'au rendu final.
-- **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne (en px), alignement. Pour un groupe, la taille est affichée en lecture seule puisqu'elle suit son contenu.
+- **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne (en px), alignement, choix de l'icône. Pour un groupe, la taille est affichée en lecture seule puisqu'elle suit son contenu ; pour une icône, un seul champ de taille, puisqu'elle est carrée.
 - **Calques** — arbre repliable, ordre d'empilement, sélection, montée/descente d'un cran.
 
 ### Naviguer dans la planche
@@ -183,7 +210,7 @@ Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 - **Déplacement** : molette seule, ou **barre espace maintenue + glisser**. Tant que la barre espace est enfoncée, aucun geste ne peut déplacer un élément, même en partant de l'un d'eux. Le clic molette fait la même chose.
 - Le sélecteur de zoom de la barre d'outils reste disponible pour revenir à une valeur ronde.
 
-Raccourcis : `V` `R` `O` `L` `T` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rétablir), `Ctrl+G` / `Ctrl+Maj+G` (grouper / dissoudre), `Ctrl+D` (dupliquer), `Ctrl+A` (tout sélectionner), `Suppr`, flèches (déplacer d'1 px, 10 px avec `Maj`), `Échap`.
+Raccourcis : `V` `R` `O` `L` `T` `I` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rétablir), `Ctrl+G` / `Ctrl+Maj+G` (grouper / dissoudre), `Ctrl+D` (dupliquer), `Ctrl+A` (tout sélectionner), `Suppr`, flèches (déplacer d'1 px, 10 px avec `Maj`), `Échap`.
 
 La sauvegarde est automatique et différée. Une modification faite par l'agent pendant que la GUI est ouverte y apparaît en direct, via SSE ; une modification faite dans la GUI est enregistrée comme venant de l'utilisateur, et c'est ce que `get_changes` restitue.
 
@@ -200,7 +227,7 @@ Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-in
 
 Les deux communiquent par IPC. Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
 
-`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, et `shared/node-defaults.ts` les valeurs par défaut. Les trois sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
+`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
 
 Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle, taille des groupes recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
 
@@ -212,8 +239,9 @@ Les invariants de hiérarchie — parent existant et de type `group`, absence de
 
 ```bash
 npm install
-npm run build          # backend (tsc) + GUI (vite)
-npm test               # suite complète
+npm run build           # backend (tsc) + GUI (vite)
+npm test                # suite complète
+npm run generate-icons  # refige shared/icons/ après une mise à jour de lucide-static
 ```
 
 La suite comprend :

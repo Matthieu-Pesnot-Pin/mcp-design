@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { nodeKindLabel } from '@shared/node-defaults'
+import { DEFAULT_ICON_STROKE_WIDTH } from '@shared/icons'
 import { DEFAULT_FONT_SIZE, MIN_LINE_HEIGHT_PX, defaultLineHeight } from '@shared/render'
+import { IconPicker } from './IconPicker'
 import { useDesignStore } from '../store/useDesignStore'
 import { round } from '../utils/nodes'
 import type { DesignNode } from '../types'
@@ -67,6 +70,7 @@ function ColorField({
 }
 
 export function Inspector() {
+  const [pickerOpen, setPickerOpen] = useState(false)
   const design = useDesignStore((state) => state.design)
   const selectedIds = useDesignStore((state) => state.selectedIds)
   const patchNodes = useDesignStore((state) => state.patchNodes)
@@ -142,6 +146,16 @@ export function Inspector() {
             <input value={Math.round(first.height)} readOnly title="Déduit du contenu du groupe" />
           </label>
         </div>
+      ) : uniformType === 'icon' ? (
+        // Une icône est carrée : deux champs laisseraient croire le contraire.
+        <div className="field-row">
+          <NumberField
+            label="Taille"
+            value={first.width}
+            min={1}
+            onChange={(size) => patch({ width: Math.max(1, size), height: Math.max(1, size) })}
+          />
+        </div>
       ) : (
         <div className="field-row">
           <NumberField label="L" value={first.width} onChange={(width) => patch({ width })} />
@@ -160,7 +174,59 @@ export function Inspector() {
         />
       </div>
 
-      {uniformType && uniformType !== 'line' && uniformType !== 'text' && uniformType !== 'group' && (
+      {uniformType === 'icon' && (
+        <>
+          {!isMulti && (
+            <div className="field icon-field">
+              <span>Icône</span>
+              <div className="tool-popover-anchor">
+                <button type="button" className="toggle-button" onClick={() => setPickerOpen((open) => !open)}>
+                  {first.icon ?? 'Choisir…'}
+                </button>
+                {pickerOpen && (
+                  <IconPicker
+                    current={first.icon}
+                    onPick={(icon) => {
+                      // Le nom de calque suit l'icône tant qu'il n'a pas été
+                      // renommé à la main : sinon un « shopping-cart » finirait
+                      // par désigner une cloche.
+                      patch(first.name === first.icon ? { icon, name: icon } : { icon })
+                      setPickerOpen(false)
+                    }}
+                    onClose={() => setPickerOpen(false)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+          <ColorField label="Couleur" value={first.stroke} onChange={(stroke) => patch({ stroke })} />
+          <div className="field-row">
+            <NumberField
+              label="Épaisseur (/24)"
+              value={first.strokeWidth ?? DEFAULT_ICON_STROKE_WIDTH}
+              step={0.25}
+              min={0.25}
+              max={4}
+              // L'épaisseur est lue dans la grille de 24 de l'icône, pas en
+              // pixels du document : elle suit donc la taille sans réglage.
+              onChange={(strokeWidth) => patch({ strokeWidth: Math.min(4, Math.max(0.25, strokeWidth)) })}
+            />
+            <label className="field">
+              <span>Remplissage</span>
+              <button
+                type="button"
+                className="toggle-button"
+                data-active={(first.fill ?? 'none') !== 'none' || undefined}
+                onClick={() => patch({ fill: (first.fill ?? 'none') === 'none' ? (first.stroke ?? '#1a1a18') : 'none' })}
+              >
+                {(first.fill ?? 'none') === 'none' ? 'Aucun' : 'Plein'}
+              </button>
+            </label>
+          </div>
+        </>
+      )}
+
+      {uniformType && uniformType !== 'line' && uniformType !== 'text' && uniformType !== 'icon' && uniformType !== 'group' && (
         <>
           <ColorField label="Remplissage" value={first.fill} onChange={(fill) => patch({ fill })} />
           <ColorField label="Contour" value={first.stroke} onChange={(stroke) => patch({ stroke })} />

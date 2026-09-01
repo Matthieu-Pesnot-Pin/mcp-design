@@ -8,6 +8,13 @@
  */
 
 import { boundsOf, childrenByParent, computeLayout, normalizedBox, spaceOriginOf, type Box, type Layout } from "./tree.js";
+import {
+  DEFAULT_ICON_STROKE_WIDTH,
+  ICON_GRID,
+  UNKNOWN_ICON_ELEMENTS,
+  iconElements,
+  type IconElement,
+} from "./icons/index.js";
 
 // La géométrie de base vit dans tree.ts (module bas-niveau, sans dépendance vers
 // celui-ci) ; elle reste exposée ici pour tous les appelants existants.
@@ -16,7 +23,7 @@ export type { Box, Point } from "./tree.js";
 
 export interface RenderNode {
   id: string;
-  type: "rect" | "ellipse" | "line" | "text" | "group";
+  type: "rect" | "ellipse" | "line" | "text" | "icon" | "group";
   name: string;
   /** Groupe conteneur, ou null a la racine. Les coordonnees sont relatives a ce parent. */
   parentId: string | null;
@@ -30,6 +37,8 @@ export interface RenderNode {
   stroke?: string;
   strokeWidth?: number;
   radius?: number;
+  /** Nom de l'icone dans la bibliotheque embarquee, p.ex. "shopping-cart". Type `icon` uniquement. */
+  icon?: string;
   text?: string;
   color?: string;
   fontSize?: number;
@@ -159,6 +168,54 @@ export function groupTransform(node: RenderNode, localCenter: { cx: number; cy: 
 }
 
 /**
+ * Placement du trace d'une icone dans sa boite.
+ *
+ * L'icone est dessinee dans une grille carree : elle est mise a l'echelle
+ * uniformement pour tenir dans la boite, puis centree. Jamais deformee — une
+ * icone etiree se lit immediatement comme un defaut, alors qu'une icone centree
+ * dans une boite trop large reste correcte.
+ */
+export function iconPlacement(node: RenderNode): { x: number; y: number; scale: number; size: number } {
+  const box = normalizedBox(node);
+  const scale = Math.min(box.width, box.height) / ICON_GRID;
+  const size = ICON_GRID * scale;
+  return { x: box.x + (box.width - size) / 2, y: box.y + (box.height - size) / 2, scale, size };
+}
+
+/** Trace du noeud, ou le carre en pointilles si le nom d'icone est inconnu. */
+export function iconElementsOf(node: RenderNode): IconElement[] {
+  return iconElements(node.icon ?? "") ?? UNKNOWN_ICON_ELEMENTS;
+}
+
+/**
+ * Attributs de trait d'une icone, exprimes dans la grille de 24.
+ *
+ * `color` fait resoudre les rares `fill="currentColor"` de la bibliotheque vers
+ * la couleur du trait : sans lui, le point d'un graphique en nuage ressortirait
+ * en noir sur une icone blanche.
+ */
+export function iconStyle(node: RenderNode): Record<string, string> {
+  return {
+    fill: node.fill ?? "none",
+    stroke: node.stroke ?? "#000000",
+    color: node.stroke ?? "#000000",
+    "stroke-width": String(round(node.strokeWidth ?? DEFAULT_ICON_STROKE_WIDTH)),
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  };
+}
+
+function attributesToSvg(attributes: Record<string, string>): string {
+  return Object.entries(attributes)
+    .map(([key, value]) => `${key}="${escapeXml(value)}"`)
+    .join(" ");
+}
+
+export function iconElementToSvg([tag, attributes]: IconElement): string {
+  return `<${tag} ${attributesToSvg(attributes)} />`;
+}
+
+/**
  * Markup SVG d'un seul noeud, sans wrapper — utilisé par l'export et par le canvas.
  * Un groupe ne produit rien par lui-meme : c'est un conteneur, rendu par
  * `documentToSvg` (serveur) ou par le canvas (navigateur).
@@ -192,6 +249,14 @@ export function nodeToSvg(node: RenderNode): string {
         `<line x1="${round(node.x)}" y1="${round(node.y)}" x2="${round(node.x + node.width)}" y2="${round(node.y + node.height)}"` +
         ` ${shapeAttributes(node)} stroke-linecap="round"${opacityAttr}${transformAttr} />`
       );
+    }
+    case "icon": {
+      // La rotation s'exprime dans l'espace du parent, donc AVANT le placement
+      // du trace : elle fait tourner l'icone posee, pas la grille de 24.
+      const place = iconPlacement(node);
+      const placement = `${transform ? `${transform} ` : ""}translate(${round(place.x)} ${round(place.y)}) scale(${round(place.scale)})`;
+      const body = iconElementsOf(node).map(iconElementToSvg).join("");
+      return `<g transform="${placement}" ${attributesToSvg(iconStyle(node))}${opacityAttr}>${body}</g>`;
     }
     case "text": {
       const m = textMetrics(node);

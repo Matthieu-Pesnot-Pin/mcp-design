@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 import { useDesignStore } from '../store/useDesignStore'
 import type { Tool } from '../types'
 
-const TOOL_KEYS: Record<string, Tool> = { v: 'select', r: 'rect', o: 'ellipse', l: 'line', t: 'text' }
+// « i » réarme l'outil icône avec la dernière icône choisie ; en choisir une
+// autre passe par le sélecteur de la barre d'outils.
+const TOOL_KEYS: Record<string, Tool> = { v: 'select', r: 'rect', o: 'ellipse', l: 'line', t: 'text', i: 'icon' }
 
 /** Un champ de saisie a toujours la priorité : les raccourcis d'outil ne doivent pas manger la frappe. */
 function isTypingTarget(target: EventTarget | null): boolean {

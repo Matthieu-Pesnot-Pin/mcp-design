@@ -52,6 +52,22 @@ function svgSize(svg: string): { width: number; height: number } {
   return { width, height };
 }
 
+/**
+ * Rasterisation d'un SVG quelconque, avec la police de secours du systeme.
+ *
+ * Partagee par la capture d'un design et par la planche de vignettes de
+ * `search_icons` : une seule configuration de resvg, donc un seul endroit ou le
+ * rendu du texte peut diverger.
+ */
+export function rasterize(svg: string, scale: number): { png: Buffer; width: number; height: number } {
+  const resvg = new Resvg(svg, {
+    fitTo: { mode: "zoom", value: scale },
+    font: { loadSystemFonts: true, defaultFontFamily: "Segoe UI", sansSerifFamily: "Segoe UI" },
+  });
+  const rendered = resvg.render();
+  return { png: Buffer.from(rendered.asPng()), width: rendered.width, height: rendered.height };
+}
+
 export function screenshotDesign(design: Design, options: ScreenshotOptions = {}): Screenshot {
   const doc = toDocument(design);
   const padding = Math.max(0, options.padding ?? 0);
@@ -67,14 +83,10 @@ export function screenshotDesign(design: Design, options: ScreenshotOptions = {}
   // L'écrêtage ne peut que réduire : un zoom demandé plus petit reste respecté.
   const scale = Math.min(requested, maxDimension / Math.max(source.width, source.height));
 
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "zoom", value: scale },
-    font: { loadSystemFonts: true, defaultFontFamily: "Segoe UI", sansSerifFamily: "Segoe UI" },
-  });
-  const rendered = resvg.render();
+  const rendered = rasterize(svg, scale);
 
   return {
-    png: Buffer.from(rendered.asPng()),
+    png: rendered.png,
     width: rendered.width,
     height: rendered.height,
     sourceWidth: source.width,

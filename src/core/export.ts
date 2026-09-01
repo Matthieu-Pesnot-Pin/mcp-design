@@ -3,11 +3,15 @@ import {
   DEFAULT_FONT_FAMILY,
   documentToSvg,
   escapeXml,
+  iconElementToSvg,
+  iconElementsOf,
+  iconStyle,
   normalizedBox,
   textLines,
   textMetrics,
   type RenderNode,
 } from "../../shared/render.js";
+import { ICON_GRID } from "../../shared/icons/index.js";
 import { boundsOf, childrenByParent, computeLayout, type Box, type Layout } from "../../shared/tree.js";
 
 export const EXPORT_FORMATS = ["svg", "html", "jsx", "json", "summary"] as const;
@@ -129,6 +133,35 @@ function nodeCss(node: DesignNode, layout: Layout, parentBox: Box | null): strin
   return declarations;
 }
 
+/** Nom d'attribut inchange : la casse du SVG, pour l'export HTML. */
+const identity = (name: string): string => name;
+
+/**
+ * SVG inline d'une icone, pour les exports HTML et JSX.
+ *
+ * L'icone est ecrite en clair plutot que tiree d'une dependance : l'export
+ * reste un fichier autonome, ouvrable tel quel, sans `npm install` prealable.
+ * Le viewBox porte la mise a l'echelle, donc le trait garde son epaisseur
+ * relative quelle que soit la taille de la boite.
+ */
+function iconSvg(node: DesignNode, attributeName: (name: string) => string): string {
+  const render = node as unknown as RenderNode;
+  const root = { viewBox: `0 0 ${ICON_GRID} ${ICON_GRID}`, width: "100%", height: "100%", ...iconStyle(render) };
+  const attributes = Object.entries(root)
+    .map(([key, value]) => `${attributeName(key)}="${escapeXml(value)}"`)
+    .join(" ");
+  const body = iconElementsOf(render)
+    .map(([tag, attrs]) =>
+      attributeName === identity
+        ? iconElementToSvg([tag, attrs])
+        : `<${tag} ${Object.entries(attrs)
+            .map(([key, value]) => `${attributeName(key)}="${escapeXml(value)}"`)
+            .join(" ")} />`
+    )
+    .join("");
+  return `<svg ${attributes}>${body}</svg>`;
+}
+
 interface WalkContext {
   layout: Layout;
   children: Map<string | null, DesignNode[]>;
@@ -156,6 +189,7 @@ function toHtml(design: Design): string {
         ];
       }
       if (node.type === "text") return [`${pad}<div class="${cls}">${escapeXml(node.text ?? "")}</div>`];
+      if (node.type === "icon") return [`${pad}<div class="${cls}">${iconSvg(node, identity)}</div>`];
       return [`${pad}<div class="${cls}"></div>`];
     });
   };
@@ -230,6 +264,9 @@ function toJsx(design: Design): string {
       if (node.type === "text") {
         return [comment, `${pad}<div style={{ ${style} }}>{${JSON.stringify(node.text ?? "")}}</div>`];
       }
+      if (node.type === "icon") {
+        return [comment, `${pad}<div style={{ ${style} }}>${iconSvg(node, toCamelCase)}</div>`];
+      }
       return [comment, `${pad}<div style={{ ${style} }} />`];
     });
   };
@@ -271,6 +308,13 @@ export function toSummary(design: Design): string {
         const preview = textLines(node as unknown as RenderNode).join(" / ");
         lines.push(
           `${indent}- ${node.id} text "${node.name}" @ ${geometry} — ${node.fontSize}px/${node.fontWeight} ${node.color} — "${preview}"`
+        );
+      } else if (node.type === "icon") {
+        // Le nom de l'icone EST sa semantique : c'est ce qui rend une maquette
+        // relisible par l'agent qui la reprend, screenshot ou pas.
+        lines.push(
+          `${indent}- ${node.id} icon "${node.name}" @ ${geometry} — ${node.icon ?? "?"}, ` +
+            `stroke ${node.stroke ?? "none"} ${node.strokeWidth ?? 2}/24${node.fill && node.fill !== "none" ? `, fill ${node.fill}` : ""}`
         );
       } else if (node.type === "line") {
         lines.push(
