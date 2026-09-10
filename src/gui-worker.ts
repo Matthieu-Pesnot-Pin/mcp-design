@@ -25,6 +25,39 @@ const rootDir = findProjectRoot(__dirname);
 const absoluteStaticRoot = path.resolve(path.join(rootDir, "gui/dist"));
 const configuredAppPath = process.env.APP_PATH || "/design-gui";
 
+/**
+ * Deux façons d'exposer la GUI, résolues une seule fois au chargement :
+ *   - `proxy`      : PROXY_URL est défini, le proxy attribue le port et monte
+ *                    la GUI sous APP_PATH (mode historique) ;
+ *   - `standalone` : pas de PROXY_URL mais APP_PORT est défini — la GUI écoute
+ *                    directement sur ce port, servie à la racine. Permet de
+ *                    l'utiliser sans le hub de centralisation.
+ * PROXY_URL prime quand les deux sont renseignés.
+ */
+type GuiMode =
+  | { kind: "proxy"; proxyUrl: string }
+  | { kind: "standalone"; port: number }
+  | { kind: "disabled"; reason: string };
+
+function resolveGuiMode(): GuiMode {
+  const proxyUrl = process.env.PROXY_URL?.trim();
+  if (proxyUrl) return { kind: "proxy", proxyUrl };
+
+  const rawPort = process.env.APP_PORT?.trim();
+  if (!rawPort) {
+    return { kind: "disabled", reason: "PROXY_URL et APP_PORT non définis" };
+  }
+
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { kind: "disabled", reason: `APP_PORT invalide (${rawPort}) — attendu : entier entre 1 et 65535` };
+  }
+  return { kind: "standalone", port };
+}
+
+const guiMode = resolveGuiMode();
+const isStandalone = guiMode.kind === "standalone";
+
 setupLogging({ processLabel: "mcp-design:GUI", logDir: resolveLogDir(rootDir) });
 const logger = createLogger("mcp-design:GUI");
 
@@ -153,7 +186,7 @@ app.get("/proxy/health", (c) => {
   const memory = process.memoryUsage();
   return c.json({
     status: "ok",
-    proxy: proxyClient ? proxyClient.getStatus() : process.env.PROXY_URL ? "error" : "standalone",
+    proxy: proxyClient ? proxyClient.getStatus() : isStandalone ? "standalone" : "error",
     uptime: process.uptime(),
     memory: { rss: memory.rss, heapUsed: memory.heapUsed },
     ipc: process.connected ? "connected" : "disconnected",
@@ -284,7 +317,9 @@ app.get("/*", (c, next) => {
     if (fs.existsSync(indexPath)) {
       // ?__direct=1 : accès au worker sur son port local, sans passer par le
       // proxy — le préfixe de montage ne doit alors pas préfixer les assets.
-      const baseHref = c.req.query("__direct") === "1" ? "/" : getHtmlBaseHref(configuredAppPath);
+      // En mode standalone la GUI est déjà servie à la racine : même règle.
+      const baseHref =
+        isStandalone || c.req.query("__direct") === "1" ? "/" : getHtmlBaseHref(configuredAppPath);
       const html = fs.readFileSync(indexPath, "utf8").replace("<head>", `<head>\n    <base href="${baseHref}" />`);
       return c.html(html);
     }
@@ -294,12 +329,61 @@ app.get("/*", (c, next) => {
   }
 });
 
+/**
+ * Lance Hono sur `port` et prévient le master. `publicUrl` est l'URL que
+ * l'utilisateur doit ouvrir : via le proxy, ou directement en localhost.
+ */
+function listen(port: number, publicUrl: string, isProxied: boolean) {
+  const serverInstance = serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
+    logger.info(`Design canvas server listening on port ${info.port}`);
+    safeSend(
+      IPCMessageSchema.parse({
+        type: "READY",
+        data: { port: info.port, isProxied, url: publicUrl },
+        timestamp: new Date().toISOString(),
+      })
+    );
+  });
+
+  serverInstance.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      // Sortie propre (code 0) : le master ne doit pas relancer un worker de plus.
+      logger.error(`Port ${port} already in use — another GUI instance is running.`);
+      safeSend(
+        IPCMessageSchema.parse({
+          type: "ALREADY_RUNNING",
+          data: { url: publicUrl },
+          timestamp: new Date().toISOString(),
+        })
+      );
+      process.exit(0);
+    }
+    logger.error(`Server error: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+/** Sans proxy : la GUI écoute sur APP_PORT et est servie à la racine. */
+function startStandalone(port: number) {
+  const publicUrl = `http://localhost:${port}`;
+  logger.info(`Standalone mode (no PROXY_URL): serving GUI on ${publicUrl}`);
+
+  setupIpcErrorHandlers();
+  listen(port, publicUrl, false);
+}
+
 async function startServer() {
-  if (!process.env.PROXY_URL) {
-    process.stderr.write("[GUI] PROXY_URL non défini — arrêt.\n");
+  if (guiMode.kind === "disabled") {
+    process.stderr.write(`[GUI] ${guiMode.reason} — arrêt.\n`);
     process.exit(0);
   }
-  const proxyUrl = process.env.PROXY_URL;
+
+  if (guiMode.kind === "standalone") {
+    startStandalone(guiMode.port);
+    return;
+  }
+
+  const proxyUrl = guiMode.proxyUrl;
   const appPath = configuredAppPath;
   const appName = process.env.APP_NAME || "MCP Design";
 
@@ -351,26 +435,7 @@ async function startServer() {
 
   setupIpcErrorHandlers();
 
-  const serverInstance = serve({ fetch: app.fetch, port: finalPort, hostname: "0.0.0.0" }, (info) => {
-    logger.info(`Design canvas server listening on port ${info.port}`);
-    safeSend(
-      IPCMessageSchema.parse({
-        type: "READY",
-        data: { port: info.port, isProxied: true, url: publicUrl },
-        timestamp: new Date().toISOString(),
-      })
-    );
-  });
-
-  serverInstance.on("error", (err: any) => {
-    if (err.code === "EADDRINUSE") {
-      // Sortie propre (code 0) : le master ne doit pas relancer un worker de plus.
-      logger.error(`Port ${finalPort} already in use — another GUI instance is running.`);
-      process.exit(0);
-    }
-    logger.error(`Server error: ${err.message}`);
-    process.exit(1);
-  });
+  listen(finalPort, publicUrl, true);
 }
 
 startServer().catch((err: any) => {

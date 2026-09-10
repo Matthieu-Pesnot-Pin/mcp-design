@@ -45,8 +45,14 @@ const __dirname = path.dirname(__filename);
 // Les flags CLI sont traités avant toute initialisation : ils s'exécutent dans le
 // répertoire de l'utilisateur, pas dans un serveur MCP.
 if (process.argv.slice(2).includes("--claude-setup-mcp")) {
-  const { runSetupMcp } = await import("./cli/setup-mcp.js");
-  process.exit(runSetupMcp({ cwd: process.cwd(), force: process.argv.slice(2).includes("--force") }));
+  const argv = process.argv.slice(2);
+  const { runSetupMcp, parseGuiExposure } = await import("./cli/setup-mcp.js");
+  const parsed = parseGuiExposure(argv);
+  if ("error" in parsed) {
+    console.error(`Erreur : ${parsed.error}`);
+    process.exit(1);
+  }
+  process.exit(runSetupMcp({ cwd: process.cwd(), force: argv.includes("--force"), exposure: parsed.exposure }));
 }
 
 function findProjectRoot(startDir: string): string {
@@ -68,7 +74,7 @@ const logger = createLogger("mcp-design");
 // variables héritées du JSON de déclaration du MCP.
 function getConfig() {
   if (fs.existsSync(packageEnvPath)) dotenv.config({ path: packageEnvPath, override: true });
-  return { proxyUrl: process.env.PROXY_URL, version: APP_VERSION };
+  return { proxyUrl: process.env.PROXY_URL, appPort: process.env.APP_PORT, version: APP_VERSION };
 }
 
 getConfig();
@@ -246,9 +252,14 @@ guiLauncher = new GuiLauncher({
   onMessage: handleIPCMessage,
 });
 
+/** La GUI a besoin soit d'un proxy, soit d'un port local (mode standalone). */
+function guiIsConfigured(): boolean {
+  return !!(process.env.PROXY_URL?.trim() || process.env.APP_PORT?.trim());
+}
+
 function launchGUI() {
-  if (!process.env.PROXY_URL) {
-    logger.info("[MASTER] PROXY_URL non défini — GUI désactivée.");
+  if (!guiIsConfigured()) {
+    logger.info("[MASTER] Ni PROXY_URL ni APP_PORT défini — GUI désactivée.");
     guiStatus = "disabled";
     return;
   }
@@ -257,13 +268,13 @@ function launchGUI() {
 }
 
 async function reconnectGui(args: any): Promise<ToolResult> {
-  getConfig(); // relit le .env au cas où PROXY_URL aurait été ajouté après le démarrage
-  if (!process.env.PROXY_URL) {
+  getConfig(); // relit le .env au cas où PROXY_URL/APP_PORT aurait été ajouté après le démarrage
+  if (!guiIsConfigured()) {
     return {
       content: [
         {
           type: "text",
-          text: "Error: PROXY_URL is not set — the GUI is disabled. Add PROXY_URL to the .env file, then call reconnect_gui again.",
+          text: "Error: neither PROXY_URL nor APP_PORT is set — the GUI is disabled. Add PROXY_URL (to expose the GUI through the proxy) or APP_PORT (to serve it directly on localhost) to the .env file, then call reconnect_gui again.",
         },
       ],
       isError: true,
@@ -278,13 +289,13 @@ async function reconnectGui(args: any): Promise<ToolResult> {
     if (guiStatus === "starting") {
       return {
         content: [
-          { type: "text", text: "GUI worker is already starting (proxy registration in progress). Wait a few seconds, then call reconnect_gui again if needed." },
+          { type: "text", text: "GUI worker is already starting. Wait a few seconds, then call reconnect_gui again if needed." },
         ],
       };
     }
     return {
       content: [
-        { type: "text", text: `GUI is already registered with the proxy${guiUrl ? ` at ${guiUrl}` : ""}. Nothing to do (use force=true to restart it anyway).` },
+        { type: "text", text: `GUI is already running${guiUrl ? ` at ${guiUrl}` : ""}. Nothing to do (use force=true to restart it anyway).` },
       ],
     };
   }
@@ -315,23 +326,26 @@ async function reconnectGui(args: any): Promise<ToolResult> {
     }
   );
 
+  const proxyUrl = process.env.PROXY_URL?.trim();
+
   if (result.outcome === "ready") {
-    return { content: [{ type: "text", text: `GUI reconnected and registered with the proxy. URL: ${result.url}` }] };
+    return { content: [{ type: "text", text: `GUI reconnected. URL: ${result.url}` }] };
   }
   if (result.outcome === "already_running") {
-    return { content: [{ type: "text", text: `GUI is already registered by another MCP instance. URL: ${result.url ?? "unknown"}` }] };
+    return { content: [{ type: "text", text: `GUI is already served by another MCP instance. URL: ${result.url ?? "unknown"}` }] };
   }
   if (result.outcome === "exited") {
+    const hint = proxyUrl
+      ? `The proxy server is probably still unreachable at ${proxyUrl}. Start the proxy server, then call reconnect_gui again.`
+      : `Port ${process.env.APP_PORT} is probably already taken by another process. Free it or set another APP_PORT, then call reconnect_gui again.`;
     return {
-      content: [
-        { type: "text", text: `GUI worker exited before completing registration (code=${result.code}). The proxy server is probably still unreachable at ${process.env.PROXY_URL}. Start the proxy server, then call reconnect_gui again.` },
-      ],
+      content: [{ type: "text", text: `GUI worker exited before it was ready (code=${result.code}). ${hint}` }],
       isError: true,
     };
   }
   return {
     content: [
-      { type: "text", text: `GUI worker started but did not confirm proxy registration within 15s. Check the logs (${resolveLogDir(rootDir)}), then retry.` },
+      { type: "text", text: `GUI worker started but did not confirm it was ready within 15s. Check the logs (${resolveLogDir(rootDir)}), then retry.` },
     ],
     isError: true,
   };

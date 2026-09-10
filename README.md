@@ -28,6 +28,18 @@ npx -y @imenam/mcp-design --claude-setup-mcp
 
 La commande crée (ou complète) le `.mcp.json` du répertoire courant avec une entrée `mcp-design` dont les variables sont pré-remplies. Ajoutez `--force` pour remplacer une entrée existante ; les autres serveurs sont préservés.
 
+Deux flags permettent de choisir directement comment la GUI sera exposée, sans éditer le JSON ensuite :
+
+```bash
+# GUI derrière le proxy central
+npx -y @imenam/mcp-design --claude-setup-mcp --proxy_url=http://localhost:3000
+
+# GUI en accès direct, sans proxy : http://localhost:4500
+npx -y @imenam/mcp-design --claude-setup-mcp --app_port=4500
+```
+
+Les deux flags sont exclusifs — la commande échoue si les deux sont passés.
+
 Exemple d'entrée générée :
 
 ```json
@@ -38,6 +50,7 @@ Exemple d'entrée générée :
       "args": ["-y", "@imenam/mcp-design"],
       "env": {
         "PROXY_URL": "http://localhost:3000",
+        "APP_PORT": "",
         "APP_GROUP": "Mon Projet",
         "APP_NAME": "Design Mon Projet",
         "APP_PATH": "/design-mon-projet",
@@ -53,12 +66,15 @@ Exemple d'entrée générée :
 
 | Variable | Rôle |
 |---|---|
-| `PROXY_URL` | URL du [proxy central](https://github.com/imenam/proxy-setup). **Sans elle, la GUI est simplement désactivée** — les outils MCP continuent de fonctionner. |
-| `APP_PATH` | Chemin de montage de la GUI derrière le proxy (défaut `/design-gui`). |
+| `PROXY_URL` | URL du [proxy central](https://github.com/imenam/proxy-setup) : le proxy attribue le port et monte la GUI sous `APP_PATH`. |
+| `APP_PORT` | Port local utilisé **quand `PROXY_URL` est absent** : la GUI est servie directement sur `http://localhost:<port>`, à la racine. Permet d'utiliser l'interface sans le hub de centralisation. |
+| `APP_PATH` | Chemin de montage de la GUI derrière le proxy (défaut `/design-gui`). Ignoré en mode `APP_PORT`. |
 | `APP_NAME` | Nom affiché dans le dashboard du proxy. |
 | `APP_GROUP` | Section repliable du dashboard du proxy (facultatif). |
 | `MCP_DESIGN_DATA_DIR` | Répertoire de stockage des designs. `MCP_DATA_DIR` est accepté en repli. Défaut : `<package>/.design-data`. |
 | `MCP_LOG_DIR` | Répertoire des logs. Défaut : `<data>/logs`. |
+
+`PROXY_URL` et `APP_PORT` s'excluent : `PROXY_URL` prime si les deux sont renseignés. **Si aucune des deux n'est définie, la GUI est simplement désactivée** — les outils MCP continuent de fonctionner.
 
 Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible, diffable, versionnable.
 
