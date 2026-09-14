@@ -26,6 +26,14 @@ const absoluteStaticRoot = path.resolve(path.join(rootDir, "gui/dist"));
 const configuredAppPath = process.env.APP_PATH || "/design-gui";
 
 /**
+ * Chemin réellement monté par le proxy. Il peut différer de `configuredAppPath`
+ * quand `APP_PATH_PREFIX` est défini : le client partagé préfixe alors le chemin
+ * naturel et renvoie le chemin final dans `result.path`. Le `<base href>` doit
+ * suivre ce chemin, sinon les assets de la SPA sont demandés au mauvais endroit.
+ */
+let effectiveAppPath = configuredAppPath;
+
+/**
  * Deux façons d'exposer la GUI, résolues une seule fois au chargement :
  *   - `proxy`      : PROXY_URL est défini, le proxy attribue le port et monte
  *                    la GUI sous APP_PATH (mode historique) ;
@@ -319,7 +327,7 @@ app.get("/*", (c, next) => {
       // proxy — le préfixe de montage ne doit alors pas préfixer les assets.
       // En mode standalone la GUI est déjà servie à la racine : même règle.
       const baseHref =
-        isStandalone || c.req.query("__direct") === "1" ? "/" : getHtmlBaseHref(configuredAppPath);
+        isStandalone || c.req.query("__direct") === "1" ? "/" : getHtmlBaseHref(effectiveAppPath);
       const html = fs.readFileSync(indexPath, "utf8").replace("<head>", `<head>\n    <base href="${baseHref}" />`);
       return c.html(html);
     }
@@ -423,7 +431,8 @@ async function startServer() {
   }
 
   const finalPort = result.port;
-  const publicUrl = result.url || `${proxyUrl}${appPath}`;
+  effectiveAppPath = result.path ?? appPath;
+  const publicUrl = result.url || `${proxyUrl}${effectiveAppPath}`;
   logger.info(`Registered with proxy. Public URL: ${publicUrl}, Local Port: ${finalPort}`);
 
   const cleanupProxy = async () => {

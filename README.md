@@ -68,13 +68,18 @@ Exemple d'entrée générée :
 |---|---|
 | `PROXY_URL` | URL du [proxy central](https://github.com/imenam/proxy-setup) : le proxy attribue le port et monte la GUI sous `APP_PATH`. |
 | `APP_PORT` | Port local utilisé **quand `PROXY_URL` est absent** : la GUI est servie directement sur `http://localhost:<port>`, à la racine. Permet d'utiliser l'interface sans le hub de centralisation. |
-| `APP_PATH` | Chemin de montage de la GUI derrière le proxy (défaut `/design-gui`). Ignoré en mode `APP_PORT`. |
-| `APP_NAME` | Nom affiché dans le dashboard du proxy. |
+| `APP_PATH` | Chemin de montage de la GUI derrière le proxy (défaut `/design-gui`). Ignoré en mode `APP_PORT`. `PROXY_APP_PATH` puis `GUI_PATH` sont acceptés en repli. |
+| `APP_NAME` | Nom affiché dans le dashboard du proxy. `PROXY_APP_NAME` puis `GUI_NAME` sont acceptés en repli. |
+| `APP_PATH_PREFIX` | Préfixe de namespace ajouté au chemin **par défaut** (ex. `/abc123` → `/abc123/design-gui`). Sert à isoler plusieurs instances sous un même proxy. |
 | `APP_GROUP` | Section repliable du dashboard du proxy (facultatif). |
 | `MCP_DESIGN_DATA_DIR` | Répertoire de stockage des designs. `MCP_DATA_DIR` est accepté en repli. Défaut : `<package>/.design-data`. |
 | `MCP_LOG_DIR` | Répertoire des logs. Défaut : `<data>/logs`. |
 
 `PROXY_URL` et `APP_PORT` s'excluent : `PROXY_URL` prime si les deux sont renseignés. **Si aucune des deux n'est définie, la GUI est simplement désactivée** — les outils MCP continuent de fonctionner.
+
+`APP_PATH` / `APP_NAME` sont les noms canoniques ; `PROXY_APP_*` puis `GUI_*` restent acceptés, dans cet ordre de priorité décroissante. La règle de `APP_PATH_PREFIX` est simple : **il ne préfixe que le chemin par défaut**. Dès que `APP_PATH` (ou l'un de ses replis) est renseigné, cette valeur est prise telle quelle, sans préfixe — la saisie manuelle l'emporte toujours. Les chemins sont normalisés (un seul `/` de séparation, pas de `/` final) et le préfixage est idempotent. Le `<base href>` de l'interface suit le chemin réellement enregistré, assets compris.
+
+La résolution est assurée par le paquet partagé [`@imenam/mcp-gui-interface`](https://www.npmjs.com/package/@imenam/mcp-gui-interface), qui documente la règle en détail.
 
 Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible, diffable, versionnable.
 
