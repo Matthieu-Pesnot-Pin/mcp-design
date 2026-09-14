@@ -45,7 +45,7 @@
   ],
   "dependencies": {
     "@hono/node-server": "^2.1.1",
-    "@imenam/mcp-gui-interface": "^1.0.11",
+    "@imenam/mcp-gui-interface": "^1.0.12",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@resvg/resvg-js": "^2.6.2",
     "dotenv": "^17.4.2",
