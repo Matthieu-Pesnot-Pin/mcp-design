@@ -15,8 +15,8 @@ import { computeLayout, boundsOf, descendantIds, ancestorsOf } from "../shared/t
 import type { RenderNode } from "../shared/render.js";
 import type { DesignStore } from "../src/core/design-store.js";
 
-function textOf(result: { content: Array<{ text: string }> }): string {
-  return result.content[0].text;
+function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
+  return result.content[0].text ?? "";
 }
 
 /** Deux cartes côte à côte, prêtes à être regroupées. */

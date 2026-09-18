@@ -16,8 +16,8 @@ import { getChanges } from "../src/tools/get-changes.js";
 import { markSynced } from "../src/tools/mark-synced.js";
 import { exportDesignTool } from "../src/tools/export-design.js";
 
-function textOf(result: { content: Array<{ text: string }> }): string {
-  return result.content[0].text;
+function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
+  return result.content[0].text ?? "";
 }
 
 test("list_designs guides the agent when there is nothing yet", (t) => {
@@ -243,9 +243,28 @@ test("export_design returns the content, or writes it to a file", (t) => {
   assert.match(textOf(exportDesignTool(store, { design_id: "board" })), /<!doctype html>/);
   assert.match(textOf(exportDesignTool(store, { design_id: "board", format: "svg" })), /<svg /);
 
-  const target = path.join(dir, "out", "board.html");
-  assert.match(textOf(exportDesignTool(store, { design_id: "board", output_path: target })), /exported as html to/);
-  assert.match(fs.readFileSync(target, "utf-8"), /<!doctype html>/);
+  // Sans relais, le MCP écrit lui-même dans le dossier de destination.
+  const outDir = path.join(dir, "out");
+  const written = exportDesignTool(store, {
+    design_id: "board",
+    destination_path: outDir,
+    filename: "board.html",
+  });
+  assert.match(textOf(written), /exported as html/);
+  assert.match(fs.readFileSync(path.join(outDir, "board.html"), "utf-8"), /<!doctype html>/);
+
+  // Avec relais, rien n'est écrit ici : les octets partent dans un bloc `resource`.
+  const relayed = exportDesignTool(store, {
+    design_id: "board",
+    destination_path: outDir,
+    filename: "relayed.html",
+    destination_relay: true,
+  });
+  const blob = relayed.content.find((block) => block.type === "resource");
+  assert.ok(blob && blob.type === "resource", "a resource block is returned when the relay is in the chain");
+  assert.equal(blob.resource.name, "relayed.html");
+  assert.match(Buffer.from(blob.resource.blob, "base64").toString("utf-8"), /<!doctype html>/);
+  assert.equal(fs.existsSync(path.join(outDir, "relayed.html")), false);
 });
 
 test("export_design rejects an unknown format", (t) => {

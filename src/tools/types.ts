@@ -25,6 +25,23 @@ export function requireString(args: Record<string, unknown> | undefined, field: 
 /** Variante de ToolResult pour les outils qui renvoient une image (capture d'écran). */
 export interface ImageToolResult {
   [key: string]: unknown;
-  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+    | ResourceBlock
+  >;
+  isError?: boolean;
+}
+
+/** Bloc qu'un outil renvoie pour un fichier que le relais du gateway écrira chez l'agent. */
+export interface ResourceBlock {
+  type: "resource";
+  resource: { uri: string; name: string; mimeType: string; blob: string };
+}
+
+/** Variante de ToolResult pour les outils qui peuvent livrer un fichier. */
+export interface FileToolResult {
+  [key: string]: unknown;
+  content: Array<{ type: "text"; text: string } | ResourceBlock>;
   isError?: boolean;
 }

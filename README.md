@@ -208,8 +208,12 @@ Un lot est intégralement validé avant la moindre écriture : une entrée inval
 |---|---|
 | `get_changes` | Liste tout ce qui a été ajouté, modifié, supprimé ou réordonné depuis la dernière baseline, champ par champ (`x: 40 -> 240`). |
 | `mark_synced` | Fige l'état courant comme nouvelle baseline. |
-| `export_design` | Rend la planche en `html`, `jsx`, `svg`, `json` ou `summary`. `output_path` écrit dans un fichier au lieu de renvoyer le contenu. |
-| `screenshot_design` | Rasterise la planche en PNG et le renvoie **en image** à l'agent. `node_id` cadre la capture sur un groupe (ou n'importe quel élément), `scale` zoome, `padding` ajoute de la marge, `output_path` écrit un `.png` au lieu de renvoyer l'image. |
+| `export_design` | Rend la planche en `html`, `jsx`, `svg`, `json` ou `summary`. `destination_path` + `filename` écrivent un fichier **sur la machine de l'agent** au lieu de renvoyer le contenu. |
+| `screenshot_design` | Rasterise la planche en PNG et le renvoie **en image** à l'agent. `node_id` cadre la capture sur un groupe (ou n'importe quel élément), `scale` zoome, `padding` ajoute de la marge, `destination_path` + `filename` écrivent un `.png` **sur la machine de l'agent** au lieu de renvoyer l'image. |
+
+> **Où le fichier est écrit.** `destination_path` est un **dossier absolu** sur la machine de l'agent, `filename` le nom que le fichier y prend. Omis, les deux outils se comportent comme avant : le contenu (ou l'image) revient dans la réponse, sans fichier.
+>
+> En stdio, ce MCP tourne à côté de l'agent et écrit lui-même. Derrière [`@imenam/mcp-http-gateway`](https://www.npmjs.com/package/@imenam/mcp-http-gateway), il tourne sur la machine du gateway et ne peut pas atteindre le disque de l'agent : il déclare alors la paire `destination_path` / `destination_relay`, renvoie les octets, et le relais — qui tourne, lui, sur la machine de l'agent — les y écrit. `destination_relay` est rempli par le relais, jamais par l'agent, et cette voie exige `GATEWAY_INLINE_WRITE_ROOTS` dans le bloc `env` du relais.
 
 **`get_changes` n'acquitte jamais ce qu'il montre.** Seul `mark_synced` déplace la baseline, et il ne doit être appelé qu'une fois les modifications réellement reportées dans le code. Un simple appel de lecture ne peut donc pas faire disparaître un diff que l'agent n'a pas encore traité.
 

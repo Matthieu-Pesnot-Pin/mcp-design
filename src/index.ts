@@ -35,6 +35,7 @@ import { getChanges } from "./tools/get-changes.js";
 import { markSynced } from "./tools/mark-synced.js";
 import { exportDesignTool } from "./tools/export-design.js";
 import { screenshotDesignTool } from "./tools/screenshot-design.js";
+import { RELAY_SHAPE_DESCRIPTIONS } from "./tools/relay.js";
 import { reorderNodesTool } from "./tools/reorder-nodes.js";
 import { searchIconsTool, DEFAULT_ICON_RESULTS, MAX_ICON_RESULTS } from "./tools/search-icons.js";
 import type { ToolResult } from "./tools/types.js";
@@ -754,13 +755,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "export_design",
       description:
-        "Render a design for integration. html = absolutely positioned divs + CSS (best starting point for real code), jsx = the same as a React component, svg = faithful preview, json = raw nodes, summary = textual inventory. Provide output_path to write to a file instead of returning the content.",
+        "Render a design for integration. html = absolutely positioned divs + CSS (best starting point for real code), jsx = the same as a React component, svg = faithful preview, json = raw nodes, summary = textual inventory. Provide destination_path and filename to write a file on the agent machine instead of returning the content.",
       inputSchema: {
         type: "object" as const,
         properties: {
           design_id: { type: "string", description: DESIGN_ID_DOC },
           format: { type: "string", enum: [...EXPORT_FORMATS], description: "Output format (default html)." },
-          output_path: { type: "string", description: "Absolute path to write the export to. When omitted, the content is returned directly." },
+          destination_path: {
+            type: "string",
+            description: `${RELAY_SHAPE_DESCRIPTIONS.destination_path}. When omitted, the content is returned directly instead of being written.`,
+          },
+          filename: { type: "string", description: `${RELAY_SHAPE_DESCRIPTIONS.filename}. Required when destination_path is provided.` },
+          destination_overwrite: { type: "boolean", description: RELAY_SHAPE_DESCRIPTIONS.destination_overwrite },
+          destination_relay: { type: "boolean", description: RELAY_SHAPE_DESCRIPTIONS.destination_relay },
         },
         required: ["design_id"],
       },
@@ -770,7 +777,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         "Render a design to a PNG image and look at it. Use it to check what the design actually looks like — proportions, overlaps, contrast, alignment — instead of inferring it from coordinates. " +
         "Pass node_id to frame the capture on a single group (or any element) rather than the whole artboard. " +
-        "The image is returned inline; provide output_path to write a .png file instead.",
+        "The image is returned inline; provide destination_path and filename to write a .png file on the agent machine instead.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -789,10 +796,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "number",
             description: "Margin in design pixels around the captured node (default 16, ignored for a full-artboard capture).",
           },
-          output_path: {
+          destination_path: {
             type: "string",
-            description: "Absolute path of a .png file to write. When omitted, the image is returned inline.",
+            description: `${RELAY_SHAPE_DESCRIPTIONS.destination_path}. When omitted, the image is returned inline instead of being written.`,
           },
+          filename: { type: "string", description: "Name of the .png file to create. Required when destination_path is provided. Must not contain path separators." },
+          destination_overwrite: { type: "boolean", description: RELAY_SHAPE_DESCRIPTIONS.destination_overwrite },
+          destination_relay: { type: "boolean", description: RELAY_SHAPE_DESCRIPTIONS.destination_relay },
         },
         required: ["design_id"],
       },
