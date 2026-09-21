@@ -1,4 +1,4 @@
-import type { RenderNode } from "./render.js";
+import { defaultLineHeight, type RenderNode } from "./render.js";
 import { DEFAULT_ICON_STROKE_WIDTH, ICON_GRID } from "./icons/index.js";
 
 /**
@@ -24,7 +24,11 @@ export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
   line: { width: 200, height: 0, stroke: "#1a1a18", strokeWidth: 2 },
   text: {
     width: 260,
-    height: 40,
+    // Une ligne : la boîte par défaut épouse le texte par défaut. Toute autre
+    // hauteur ferait descendre la première ligne sous le point posé, puisque le
+    // bloc de lignes est centré dans sa boîte. Un texte créé sans hauteur la
+    // recalcule de toute façon sur son propre contenu.
+    height: defaultLineHeight(24),
     text: "Texte",
     color: "#1a1a18",
     fontSize: 24,
@@ -32,8 +36,9 @@ export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
     fontWeight: 400,
     fontStyle: "normal",
     textAlign: "left",
-    // En pixels, comme x/y/fontSize — jamais un multiplicateur.
-    lineHeight: 32,
+    // `lineHeight` n'a volontairement pas de valeur par défaut : figée, elle
+    // rendrait un texte de 64px sur un interligne de 32. Absente, elle suit la
+    // taille de police (fontSize x 1.35), comme l'annonce sa documentation.
   },
   // Taille de la grille de Lucide : une icone posee sans consigne rend au
   // format pour lequel son trace a ete dessine.

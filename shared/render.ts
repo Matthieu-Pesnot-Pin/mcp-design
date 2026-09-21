@@ -149,6 +149,30 @@ export function measuredTextHeight(node: RenderNode): number {
   return Math.max(lineStep, textLines(node).length * lineStep);
 }
 
+/**
+ * Vrai quand la boîte épouse déjà exactement son texte.
+ *
+ * C'est le signe qu'aucune hauteur n'a été voulue pour elle-même : la boîte
+ * suit son contenu, et doit continuer à le suivre quand le texte change. Une
+ * hauteur choisie (un libellé calé sur la hauteur de son bouton) ne vérifie pas
+ * cette égalité et n'est donc jamais réajustée.
+ */
+export function hugsText(node: RenderNode): boolean {
+  return Math.abs(Math.abs(node.height) - measuredTextHeight(node)) < 0.5;
+}
+
+/**
+ * Le noeud, avec la hauteur qui épouse son texte.
+ *
+ * Une boîte à la taille de son texte le place de fait en haut à gauche : le
+ * centrage vertical n'a plus rien à décaler. C'est ce qu'attend qui pose un
+ * texte sans penser à sa boîte ; un conteneur qui veut centrer son libellé,
+ * lui, donne une hauteur explicite.
+ */
+export function withFittedTextHeight<T extends RenderNode>(node: T): T {
+  return { ...node, height: measuredTextHeight(node) };
+}
+
 function shapeAttributes(node: RenderNode): string {
   const parts: string[] = [];
   if (node.type !== "line" && node.type !== "text") {

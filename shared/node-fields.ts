@@ -30,7 +30,10 @@ export const NODE_FIELD_DOCS = {
     "On a group, derived from the content and read-only.",
   height:
     "Height of the bounding box, in pixels. On a line, the vertical delta from start to end — it may be negative. " +
-    "On a group, derived from the content and read-only.",
+    "On a group, derived from the content and read-only. " +
+    "On a TEXT node, leave it out: the box then takes the exact height of the text (lines x lineHeight), " +
+    "so the first line starts at y. Set it only to centre a label inside a container — give the text node " +
+    "the container's y and height, and the block of lines is centred in it.",
   rotation: "Rotation in degrees, clockwise, around the centre of the bounding box. 0 = upright.",
   opacity: "Opacity, from 0 (fully transparent) to 1 (fully opaque).",
 
@@ -57,7 +60,9 @@ export const NODE_FIELD_DOCS = {
     "buttons), build it once as a group and add instances of it instead of duplicating it. " +
     "Change this field to swap an instance over to another group; use detach_instances when one copy must diverge.",
 
-  text: "Text content. It is NEVER auto-wrapped: only explicit \\n characters start a new line.",
+  text:
+    "Text content. It is NEVER auto-wrapped: only explicit \\n characters start a new line. " +
+    "A box that hugs its text keeps hugging it: adding a line grows the box instead of overflowing it.",
   color: "CSS colour of the text.",
   fontSize: "Font size, in pixels (same meaning as the CSS font-size property).",
   fontFamily: 'CSS font stack, e.g. "Inter, system-ui, sans-serif".',

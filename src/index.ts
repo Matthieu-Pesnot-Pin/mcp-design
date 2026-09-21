@@ -371,6 +371,8 @@ const NODE_FIELDS_DOC =
   "Fields accepted per type — rect: fill, stroke, strokeWidth, radius; ellipse: fill, stroke, strokeWidth; " +
   "line: stroke, strokeWidth (the line goes from (x, y) to (x + width, y + height)); " +
   "text: text, color, fontSize, fontFamily, fontWeight, fontStyle, textAlign, lineHeight; " +
+  "a text node given no height takes the exact height of its text, so its first line starts at y — " +
+  "pass a height only to centre a label inside a container (same y and height as the container); " +
   "icon: icon (required — the name of the drawing), fill, stroke, strokeWidth; " +
   "instance: componentId (required — the id of the group it mirrors); nothing else, its look comes from that group. " +
   "Any field left out falls back to a sensible default, so a node can be created from its type alone.";

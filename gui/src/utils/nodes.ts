@@ -1,4 +1,5 @@
 import { NODE_DEFAULTS, clampNodeSize, defaultNodeName, type NodeKind } from '@shared/node-defaults'
+import { hugsText, measuredTextHeight, type RenderNode } from '@shared/render'
 import { descendantIds, withoutRedundantDescendants, type Box } from '@shared/tree'
 import type { DesignNode } from '../types'
 
@@ -43,7 +44,23 @@ export function createNode(type: NodeKind, patch: Partial<Omit<DesignNode, 'id' 
   if (type === 'icon' && base.icon && patch.name === undefined) base.name = base.icon
 
   const size = clampNodeSize(type, base.width, base.height)
-  return { ...base, width: size.width, height: size.height }
+  const fitted = { ...base, width: size.width, height: size.height }
+
+  // Comme côté serveur : un texte posé sans hauteur (simple clic) prend celle de
+  // son texte, donc se pose exactement au point cliqué.
+  if (type === 'text' && patch.height === undefined) fitted.height = measuredTextHeight(fitted as RenderNode)
+  return fitted
+}
+
+/**
+ * Applique un patch à un noeud en gardant la boîte d'un texte collée à son
+ * contenu. Même règle que `applyPatch` côté serveur : seule une boîte qui
+ * épousait déjà son texte suit ses changements.
+ */
+export function patchNode(node: DesignNode, patch: Partial<DesignNode>): DesignNode {
+  const next = { ...node, ...patch }
+  if (node.type !== 'text' || patch.height !== undefined || !hugsText(node as RenderNode)) return next
+  return { ...next, height: measuredTextHeight(next as RenderNode) }
 }
 
 /** Décalage d'une copie, en pixels : assez pour la voir, assez peu pour la retrouver. */

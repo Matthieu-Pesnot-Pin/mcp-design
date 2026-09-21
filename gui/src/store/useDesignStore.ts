@@ -16,7 +16,7 @@ import {
   type Layout,
 } from '@shared/tree'
 import { api } from '../utils/api'
-import { cloneSubtrees, createNode, newGroupId, withoutSelectedAncestors } from '../utils/nodes'
+import { cloneSubtrees, createNode, newGroupId, patchNode, withoutSelectedAncestors } from '../utils/nodes'
 import type { Design, DesignNode, DesignSummary, SaveState, Tool } from '../types'
 
 /** Ce qu'un undo restaure : le document, jamais la sélection ni l'outil courant. */
@@ -345,7 +345,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
       commit(
         (design) => ({
           ...design,
-          nodes: design.nodes.map((node) => (targets.has(node.id) ? { ...node, ...patch } : node)),
+          nodes: design.nodes.map((node) => (targets.has(node.id) ? patchNode(node, patch) : node)),
         }),
         options
       )

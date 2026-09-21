@@ -167,6 +167,19 @@ Le texte n'est **jamais re-wrappé automatiquement** : seuls les `\n` explicites
 
 `lineHeight` est une **distance en pixels entre deux lignes de base**, pas un multiplicateur de `fontSize` : avec `fontSize: 64`, on écrit `76`, pas `1.2`. C'est l'unité que les agents emploient spontanément, et la seule qui se lise dans la même échelle que le reste. Une valeur sous 4 est donc refusée à l'écriture avec un message explicite, et les fichiers écrits avant ce changement sont convertis à la lecture (`ratio x fontSize`) par [`src/core/migrate.ts`](src/core/migrate.ts). Champ omis = `fontSize x 1.35`.
 
+#### La boîte d'un texte épouse son texte
+
+Le bloc de lignes est **centré verticalement dans la boîte** du nœud : c'est ce qui permet de centrer un libellé dans un bouton sans calculer de décalage. Encore faut-il que la boîte soit celle qu'on croit — une hauteur par défaut plus grande que le texte le fait descendre sous le point posé.
+
+Donc : **un nœud `text` créé sans `height` prend la hauteur exacte de son texte** (`lignes x lineHeight`). Le centrage n'a alors plus rien à décaler, et la première ligne commence bien à `y`, à gauche de `x`. Ajouter une ligne agrandit la boîte au lieu de la faire déborder : une boîte qui épousait son texte continue de l'épouser, à chaque changement de `text`, `fontSize` ou `lineHeight`, à l'écriture par l'agent comme à l'édition dans la GUI.
+
+Une hauteur **explicite**, elle, n'est jamais retouchée — c'est le geste qui dit « centre ce libellé » :
+
+```jsonc
+{ "type": "text", "x": 40, "y": 120, "text": "Titre", "fontSize": 32 }          // boîte = 43.2px, texte posé à y
+{ "type": "text", "x": 40, "y": 100, "height": 26, "text": "OK", "fontSize": 12 } // libellé centré dans son bouton
+```
+
 ### Groupes réutilisables
 
 Quand un même bloc revient plusieurs fois — une carte, une ligne de liste, un bouton —, il ne se recopie pas : il se **construit une fois** en groupe, puis s'**instancie**. Une `instance` ne stocke aucun contenu, seulement l'identifiant du groupe qu'elle reproduit ; le sous-arbre est reconstitué au rendu. Éditer le groupe met donc à jour **toutes** ses instances d'un coup, et un bloc répété reste une seule chose à lire et à modifier. C'est le fonctionnement d'un composant principal dans Figma.
@@ -250,7 +263,7 @@ Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 - **Outils** — sélection, rectangle, ellipse, ligne, texte, icône. Glisser pour dimensionner, cliquer pour poser à la taille par défaut. L'outil icône ouvre d'abord son sélecteur : poser une icône suppose d'avoir choisi laquelle.
 - **Édition** — déplacement au glisser, 8 poignées de redimensionnement (2 extrémités pour une ligne), sélection multiple au rectangle d'encadrement ou au Maj+clic.
 - **Groupes** — `Ctrl+G` groupe la sélection, `Ctrl+Maj+G` la dissout. Un clic dans le canvas sélectionne le **groupe le plus haut** ; `Alt+clic` vise l'élément exact à l'intérieur. Déplacer un groupe déplace tout son contenu.
-- **Texte** — double-clic pour éditer en place, avec la même métrique qu'au rendu final.
+- **Texte** — double-clic pour éditer en place, avec la même métrique qu'au rendu final. Une boîte à la taille de son texte le reste : ajouter une ligne l'agrandit d'autant.
 - **Inspecteur** — position, taille, rotation, opacité, couleurs, épaisseur, arrondi, contenu, taille et graisse de police, interligne (en px), alignement, choix de l'icône. Pour un groupe, la taille est affichée en lecture seule puisqu'elle suit son contenu ; pour une icône, un seul champ de taille, puisqu'elle est carrée.
 - **Calques** — arbre repliable, ordre d'empilement, sélection, montée/descente d'un cran.
 

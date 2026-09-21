@@ -8,6 +8,7 @@ import {
   clampNodeSize,
   defaultNodeName,
 } from "../../shared/node-defaults.js";
+import { hugsText, measuredTextHeight, type RenderNode } from "../../shared/render.js";
 import { CORE_ICONS, hasIcon, iconCount } from "../../shared/icons/index.js";
 import { suggestIcons } from "../../shared/icons/search.js";
 import { shortId } from "./ids.js";
@@ -133,6 +134,15 @@ export function buildNode(input: CreateNodeInput, existingIds: Set<string>, inde
   draft.width = size.width;
   draft.height = size.height;
 
+  // Sans hauteur demandée, la boîte d'un texte est celle de son texte : le bloc
+  // de lignes, centré dans une boîte à sa taille, se pose alors exactement au
+  // point donné — ce que l'appelant attend quand il n'a parlé que de x et y.
+  // Après le clamp, donc : ce plancher garde une boîte dessinée sélectionnable,
+  // il n'a pas à gonfler une boîte qui n'a jamais été dimensionnée à la souris.
+  if (type === "text" && input.height === undefined) {
+    draft.height = measuredTextHeight(draft as unknown as RenderNode);
+  }
+
   const parsed = DesignNodeSchema.safeParse(draft);
   if (!parsed.success) {
     throw new DesignError(
@@ -158,6 +168,13 @@ export function applyPatch(node: DesignNode, patch: Record<string, unknown>): De
   }
   for (const field of ALLOWED[node.type]) {
     if (patch[field] !== undefined) next[field] = patch[field];
+  }
+
+  // Une boîte qui épousait son texte continue de l'épouser : rallonger le texte
+  // d'une ligne agrandit la boîte au lieu de la faire déborder. Une hauteur
+  // choisie — ou redonnée dans ce patch — reste intacte.
+  if (node.type === "text" && patch.height === undefined && hugsText(node as unknown as RenderNode)) {
+    next.height = measuredTextHeight(next as unknown as RenderNode);
   }
 
   if (node.type === "icon" && patch.icon !== undefined) next.icon = requireIconName(patch.icon);
