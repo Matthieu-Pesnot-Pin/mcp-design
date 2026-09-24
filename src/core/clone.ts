@@ -23,6 +23,8 @@ export interface CloneResult {
   copies: DesignNode[];
   /** Ids des copies correspondant aux racines demandees. */
   rootIds: string[];
+  /** Id d'origine -> id de la copie, pour chaque noeud copie. */
+  idMap: Map<string, string>;
 }
 
 /**
@@ -41,5 +43,5 @@ export function cloneSubtrees(nodes: DesignNode[], rootIds: string[]): CloneResu
     parentId: roots.has(node.id) ? node.parentId : (idMap.get(node.parentId ?? "") ?? node.parentId),
   }));
 
-  return { copies, rootIds: rootIds.map((id) => idMap.get(id)!) };
+  return { copies, rootIds: rootIds.map((id) => idMap.get(id)!), idMap };
 }

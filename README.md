@@ -93,6 +93,7 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 |---|---|
 | `list_designs` | Liste les planches, leur taille, leur nombre d'éléments et le nombre de modifications non encore récupérées. |
 | `create_design` | Crée une planche vide (`name`, et facultativement `width`, `height`, `background`). |
+| `duplicate_design` | Crée une nouvelle planche reprenant toute une planche existante — dimensions, fond, éléments, groupes et instances. Les identifiants des éléments sont conservés ; `name` et `group` sont facultatifs (par défaut, le nom d'origine suivi de « (copy) » et le même groupe de pages). La copie part sans modification en attente. |
 | `get_design` | Lit une planche : `format: "summary"` (inventaire compact, défaut) ou `format: "json"` (valeurs exactes). |
 | `update_design` | Renomme la planche, change ses dimensions ou son fond. |
 | `delete_design` | Supprime définitivement une planche. |
@@ -104,6 +105,7 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 | `add_nodes` | Ajoute un ou plusieurs éléments par-dessus les autres. |
 | `update_nodes` | Patche des éléments existants — seuls les champs fournis changent. |
 | `delete_nodes` | Supprime des éléments par identifiant. Supprimer un groupe emporte son contenu. |
+| `duplicate_nodes` | Copie des éléments ou des groupes avec tout leur contenu, sous de nouveaux identifiants. `offset_x`/`offset_y` et `count` disposent une série de copies, `parent_id` les dépose dans un groupe. Avec `target_design_id`, la copie va dans une **autre planche** : les éléments gardent leur position à l'écran, et les composants reproduits par les instances copiées sont copiés avec elles, une seule fois, à la racine. |
 | `group_nodes` | Enveloppe des éléments dans un nouveau groupe, sans rien déplacer à l'écran. |
 | `ungroup_nodes` | Dissout des groupes : leur contenu remonte d'un niveau, toujours sans bouger. |
 | `detach_instances` | Rompt le lien d'une instance avec son composant : son contenu devient des éléments ordinaires. |

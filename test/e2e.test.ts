@@ -179,6 +179,7 @@ test("the server advertises every design tool", async (t) => {
     "delete_design",
     "delete_nodes",
     "detach_instances",
+    "duplicate_design",
     "duplicate_nodes",
     "export_design",
     "get_changes",

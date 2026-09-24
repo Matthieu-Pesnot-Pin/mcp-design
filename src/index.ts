@@ -20,6 +20,7 @@ import { REORDER_DIRECTIONS } from "../shared/tree.js";
 import { normalizeDesignGroup } from "../shared/schemas/design.schema.js";
 import { listDesigns } from "./tools/list-designs.js";
 import { createDesign } from "./tools/create-design.js";
+import { duplicateDesign } from "./tools/duplicate-design.js";
 import { getDesign } from "./tools/get-design.js";
 import { updateDesign } from "./tools/update-design.js";
 import { deleteDesign } from "./tools/delete-design.js";
@@ -482,6 +483,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "duplicate_design",
+      description:
+        "Copy a whole design into a new one: artboard size, background, every node, group and instance. " +
+        "Node ids are kept, so ids read from the original apply to the copy. Use it to start a variant of a page, " +
+        "or a new page that reuses an existing layout. The copy starts with no pending changes.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: "Id of the design to copy." },
+          name: { type: "string", description: "Name of the copy (default: the original name followed by \"(copy)\")." },
+          group: { type: ["string", "null"], description: `Page group of the copy (default: the original's group). ${GROUP_PATH_DOC}` },
+        },
+        required: ["design_id"],
+      },
+    },
+    {
       name: "get_design",
       description:
         "Read a design. format=summary (default) gives a compact inventory of the nodes; format=json gives the exact values needed to build an update_nodes patch. Never acknowledges pending user edits — use get_changes for that.",
@@ -606,7 +623,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Copy elements or whole groups. A group is copied with everything inside it, and every copy gets fresh ids. " +
         "Use it for a one-off copy that is MEANT TO DIVERGE. For a block repeated identically, do not copy it: " +
         "instantiate it instead (add_nodes with type \"instance\"), so a single edit updates every occurrence. " +
-        "Copies land next to the originals by default; use offset_x/offset_y to place them, count to lay out a series, and parent_id to drop them into another group.",
+        "Copies land next to the originals by default; use offset_x/offset_y to place them, count to lay out a series, and parent_id to drop them into another group. " +
+        "Pass target_design_id to copy into ANOTHER design: the copies keep their on-screen position (at the target's root, " +
+        "or in parent_id), and any component mirrored by a copied instance is copied along once, at the target's root, " +
+        "with the copied instances pointed at it. To copy a whole page, use duplicate_design instead.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -618,13 +638,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "Ids of the elements or groups to copy. A node whose ancestor is also listed is ignored: the ancestor already carries it.",
             minItems: 1,
           },
-          offset_x: { type: "number", description: "Horizontal shift of each copy, in pixels (default 20). Use the element width plus a gutter to lay copies out in a row." },
-          offset_y: { type: "number", description: "Vertical shift of each copy, in pixels (default 20). Use the element height plus a gutter to stack copies in a column." },
+          target_design_id: {
+            type: "string",
+            description: "Design the copies are written into. Omit to copy within design_id.",
+          },
+          offset_x: { type: "number", description: "Horizontal shift of each copy, in pixels (default 20, 0 into another design). Use the element width plus a gutter to lay copies out in a row." },
+          offset_y: { type: "number", description: "Vertical shift of each copy, in pixels (default 20, 0 into another design). Use the element height plus a gutter to stack copies in a column." },
           count: { type: "number", description: `How many copies to make (default 1, max ${MAX_DUPLICATE_COPIES}). Copy n is shifted by n times the offset, which lays out a regular series in one call.` },
           parent_id: {
             type: ["string", "null"],
             description:
-              "Group the copies are dropped into. Their x/y are then read in that group's space. Omit to keep the original's parent, or pass null to place the copies at the root.",
+              "Group the copies are dropped into, in the target design. Their x/y are then read in that group's space. Omit to keep the original's parent (the root, into another design), or pass null to place the copies at the root.",
           },
         },
         required: ["design_id", "node_ids"],
@@ -854,6 +878,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "create_design": {
         const result = createDesign(store, params);
+        broadcastToGUI({ type: "DESIGNS_UPDATED", data: { designs: store.list() }, timestamp: new Date().toISOString() });
+        return { ...result, content: [{ type: "text", text: result.content[0].text + guiHint(result.design!.id) }] };
+      }
+
+      case "duplicate_design": {
+        const result = duplicateDesign(store, params);
         broadcastToGUI({ type: "DESIGNS_UPDATED", data: { designs: store.list() }, timestamp: new Date().toISOString() });
         return { ...result, content: [{ type: "text", text: result.content[0].text + guiHint(result.design!.id) }] };
       }

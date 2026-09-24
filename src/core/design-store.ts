@@ -287,6 +287,33 @@ export class DesignStore {
   }
 
   /**
+   * Nouveau design reprenant la planche et tous les éléments d'un design
+   * existant, identifiants compris. La copie part synchronisée : sa référence
+   * de comparaison est son propre contenu.
+   */
+  duplicate(sourceId: string, input: { name?: string; group?: string | null } = {}): Design {
+    const source = this.get(sourceId);
+    const name = input.name?.trim() || `${source.name} (copy)`;
+    const now = new Date().toISOString();
+    const design: Design = {
+      id: this.allocateId(name),
+      name,
+      group: input.group === undefined ? source.group : normalizeDesignGroup(input.group),
+      width: source.width,
+      height: source.height,
+      background: source.background,
+      nodes: structuredClone(source.nodes),
+      createdAt: now,
+      updatedAt: now,
+      revision: 0,
+      lastEditor: "agent",
+      baseline: { revision: 0, at: now, nodes: structuredClone(source.nodes) },
+    };
+    this.write(design);
+    return design;
+  }
+
+  /**
    * Applique une mutation et incrémente la révision. `editor` distingue une
    * modification de l'agent d'une modification faite à la main dans la GUI —
    * c'est ce qui permet à get_changes de rester lisible.
