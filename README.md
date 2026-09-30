@@ -81,6 +81,15 @@ Exemple d'entrée générée :
 
 La résolution est assurée par le paquet partagé [`@imenam/mcp-gui-interface`](https://www.npmjs.com/package/@imenam/mcp-gui-interface), qui documente la règle en détail.
 
+### Exposition réseau
+
+La GUI écoute sur `127.0.0.1` uniquement, en mode proxy comme en mode `APP_PORT` : elle n'est pas joignable directement depuis une autre machine. Pour y accéder à distance, passez par le [proxy central](https://github.com/imenam/proxy-setup) ou le gateway manager, qui relaient vers `localhost:<port>`.
+
+Chaque requête traverse la garde de [`@imenam/mcp-gui-interface`](https://www.npmjs.com/package/@imenam/mcp-gui-interface) (`honoGuiGuard`), qui répond `403` :
+
+- à tout en-tête `Host` autre que `localhost`, `127.0.0.1` ou `::1` (protection contre le DNS rebinding) ;
+- aux modifications (méthodes autres que `GET`, `HEAD`, `OPTIONS`) venues d'un autre site, d'après `Sec-Fetch-Site` ou, à défaut, `Origin` (sont admis : la machine elle-même, le proxy de `PROXY_URL`).
+
 Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible, diffable, versionnable.
 
 ---
@@ -313,6 +322,7 @@ La suite comprend :
 
 - des tests unitaires du store, de la fabrique d'éléments, du moteur de diff et de l'export ;
 - des tests des outils MCP appelés directement ;
+- des tests d'exposition réseau (`test/network-exposure.test.ts`) qui lancent le worker GUI en mode `APP_PORT` et vérifient l'écoute sur `127.0.0.1` seul, le refus d'un `Host` étranger et des modifications cross-site, et l'acceptation des requêtes relayées par le proxy ;
 - une suite de bout en bout (`test/e2e.test.ts`) qui lance un vrai serveur MCP sur stdio, attend l'enregistrement de son worker auprès du proxy, puis vérifie l'aller-retour complet agent → GUI → agent.
 
 La suite de bout en bout a besoin du proxy (`http://localhost:3000`, ou `E2E_PROXY_URL`). S'il est absent, elle est ignorée plutôt qu'en échec.

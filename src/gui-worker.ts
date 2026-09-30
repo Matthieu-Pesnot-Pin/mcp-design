@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { ProxyClient, createLogger, setupLogging } from "@imenam/mcp-gui-interface";
+import { GUI_LISTEN_HOST, ProxyClient, createLogger, honoGuiGuard, setupLogging } from "@imenam/mcp-gui-interface";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -102,6 +102,7 @@ const parentCheckInterval = setInterval(() => {
 }, 2000);
 
 const app = new Hono();
+app.use("*", honoGuiGuard());
 let proxyClient: ProxyClient | null = null;
 const sseControllers = new Set<any>();
 const pendingRequests = new Map<string, (value: any) => void>();
@@ -342,7 +343,7 @@ app.get("/*", (c, next) => {
  * l'utilisateur doit ouvrir : via le proxy, ou directement en localhost.
  */
 function listen(port: number, publicUrl: string, isProxied: boolean) {
-  const serverInstance = serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
+  const serverInstance = serve({ fetch: app.fetch, port, hostname: GUI_LISTEN_HOST }, (info) => {
     logger.info(`Design canvas server listening on port ${info.port}`);
     safeSend(
       IPCMessageSchema.parse({
