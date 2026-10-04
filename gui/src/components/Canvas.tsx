@@ -2,7 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { groupTransform, nodeToSvg, normalizedBox, textMetrics } from '@shared/render'
 import { boundsOf, childrenByParent, computeLayout, spaceOriginOf, unionBoundsOf, type Box, type Layout } from '@shared/tree'
 import { expandInstances, instanceRootOf } from '@shared/instances'
+import { elementsInArea } from '@shared/feedback'
 import { clickTarget, drillTarget, useDesignStore } from '../store/useDesignStore'
+import { useRemarkStore } from '../store/useRemarkStore'
+import { remarkTargetOf } from '../utils/remarks'
+import { RemarkLayer, RemarkShapes } from './RemarkOverlay'
 import { rectsIntersect, round } from '../utils/nodes'
 import type { DesignNode, Tool } from '../types'
 
@@ -20,6 +24,8 @@ type Gesture =
   | { kind: 'resize'; handle: HandleId; origin: Point; startNode: DesignNode }
   | { kind: 'marquee'; origin: Point; point: Point }
   | { kind: 'pan'; clientX: number; clientY: number; panX: number; panY: number }
+  /** Mode Remarques : un clic vise un élément, un glissement trace une zone. */
+  | { kind: 'remark'; origin: Point; point: Point; screen: Point; nodeId: string | null; alt: boolean; moved: boolean }
 
 const HANDLES: Array<{ id: HandleId; cursor: string; fx: number; fy: number }> = [
   { id: 'nw', cursor: 'nwse-resize', fx: 0, fy: 0 },
@@ -35,6 +41,21 @@ const HANDLES: Array<{ id: HandleId; cursor: string; fx: number; fy: number }> =
 function boxFromPoints(a: Point, b: Point): Box {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) }
 }
+
+/** Zone ramenée dans les limites de la planche, au pixel près. */
+function clampToArtboard(box: Box, width: number, height: number): Box {
+  const x = Math.max(0, Math.round(box.x))
+  const y = Math.max(0, Math.round(box.y))
+  return {
+    x,
+    y,
+    width: Math.max(0, Math.min(width, Math.round(box.x + box.width)) - x),
+    height: Math.max(0, Math.min(height, Math.round(box.y + box.height)) - y),
+  }
+}
+
+/** En dessous, un glissement en mode Remarques ne trace pas de zone exploitable. */
+const MIN_AREA_PX = 4
 
 /** Appui précédent, retenu pour reconnaître un double-clic sans l'évènement natif. */
 interface Press {
@@ -138,6 +159,10 @@ export function Canvas() {
   const panMode = useDesignStore((state) => state.panMode)
   const selectedIds = useDesignStore((state) => state.selectedIds)
   const editingTextId = useDesignStore((state) => state.editingTextId)
+  const remarking = useRemarkStore((state) => state.mode === 'remarks')
+  const composerNodeId = useRemarkStore((state) => (state.composer?.kind === 'node' ? state.composer.nodeId : null))
+  /** Élément que viserait un clic, en mode Remarques. */
+  const [hoverId, setHoverId] = useState<string | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
@@ -145,7 +170,7 @@ export function Canvas() {
   const lastPressRef = useRef<Press | null>(null)
   // Incrémenté à chaque début de geste : c'est ce qui (re)monte les écouteurs globaux.
   const [gestureTick, setGestureTick] = useState(0)
-  const [rubberBand, setRubberBand] = useState<{ kind: 'create' | 'marquee'; box: Box } | null>(null)
+  const [rubberBand, setRubberBand] = useState<{ kind: 'create' | 'marquee' | 'area'; box: Box } | null>(null)
 
   // Le canvas travaille sur les noeuds EXPANSÉS : chaque instance y est déjà
   // remplacée par une copie du contenu de son composant, donc le rendu, les
@@ -236,6 +261,22 @@ export function Canvas() {
       } else if (gesture.kind === 'marquee') {
         gesture.point = point
         setRubberBand({ kind: 'marquee', box: boxFromPoints(gesture.origin, point) })
+      } else if (gesture.kind === 'remark') {
+        if (!gesture.moved) {
+          const far =
+            Math.abs(event.clientX - gesture.screen.x) >= DRAG_THRESHOLD_PX ||
+            Math.abs(event.clientY - gesture.screen.y) >= DRAG_THRESHOLD_PX
+          if (!far) return
+          gesture.moved = true
+        }
+        gesture.point = point
+        const current = store.design
+        if (current) {
+          setRubberBand({
+            kind: 'area',
+            box: clampToArtboard(boxFromPoints(gesture.origin, point), current.width, current.height),
+          })
+        }
       } else if (gesture.kind === 'move') {
         if (!gesture.moved) {
           const far =
@@ -302,6 +343,19 @@ export function Canvas() {
           .filter((node) => node.parentId === null)
           .filter((node) => rectsIntersect(boundsOf(layout, node.id), box))
         store.setSelection(hits.map((node) => node.id))
+      } else if (gesture.kind === 'remark' && store.design) {
+        const remarks = useRemarkStore.getState()
+        if (gesture.moved) {
+          const area = clampToArtboard(boxFromPoints(gesture.origin, gesture.point), store.design.width, store.design.height)
+          if (area.width >= MIN_AREA_PX && area.height >= MIN_AREA_PX) {
+            remarks.openAreaComposer(area, elementsInArea(store.design.nodes, area))
+          }
+        } else if (gesture.nodeId) {
+          const current = remarks.composer?.kind === 'node' ? remarks.composer.nodeId : null
+          remarks.openNodeComposer(remarkTargetOf(nodes, gesture.nodeId, gesture.alt, current))
+        } else {
+          remarks.closeComposerIfEmpty()
+        }
       }
 
       gestureRef.current = { kind: 'none' }
@@ -314,13 +368,13 @@ export function Canvas() {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
-  }, [gestureTick, toDesignPoint, layout])
+  }, [gestureTick, toDesignPoint, layout, nodes])
 
   if (!design) return null
 
-  const selectionBox = unionBoundsOf(layout, selectedIds)
+  const selectionBox = remarking ? null : unionBoundsOf(layout, selectedIds)
   const singleSelection = selectedIds.length === 1 ? nodes.find((node) => node.id === selectedIds[0]) : undefined
-  const resizable = singleSelection && singleSelection.type !== 'group' ? singleSelection : undefined
+  const resizable = !remarking && singleSelection && singleSelection.type !== 'group' ? singleSelection : undefined
   const editingNode = editingTextId ? nodes.find((node) => node.id === editingTextId) : undefined
 
   const beginGesture = (gesture: Gesture) => {
@@ -342,7 +396,10 @@ export function Canvas() {
     if (event.button !== 0) return
 
     const point = toDesignPoint(event)
-    if (tool === 'select') {
+    if (remarking) {
+      const screen = { x: event.clientX, y: event.clientY }
+      beginGesture({ kind: 'remark', origin: point, point, screen, nodeId: null, alt: false, moved: false })
+    } else if (tool === 'select') {
       // Un clic dans le vide coupe la série : deux clics sur un même élément
       // séparés par un clic ailleurs ne forment pas un double-clic.
       lastPressRef.current = null
@@ -359,7 +416,15 @@ export function Canvas() {
       beginPan(event)
       return
     }
-    if (event.button !== 0 || tool !== 'select') return
+    if (event.button !== 0) return
+    if (remarking) {
+      event.stopPropagation()
+      const point = toDesignPoint(event)
+      const screen = { x: event.clientX, y: event.clientY }
+      beginGesture({ kind: 'remark', origin: point, point, screen, nodeId: node.id, alt: event.altKey, moved: false })
+      return
+    }
+    if (tool !== 'select') return
     event.stopPropagation()
 
     const store = useDesignStore.getState()
@@ -441,6 +506,7 @@ export function Canvas() {
         <g
           key={node.id}
           className="canvas-node"
+          data-node-id={node.id}
           data-hidden={node.id === editingTextId || undefined}
           onPointerDown={(event) => startNodeGesture(event, node)}
           dangerouslySetInnerHTML={{ __html: nodeToSvg(node) }}
@@ -453,10 +519,18 @@ export function Canvas() {
       ref={viewportRef}
       className="canvas-viewport"
       data-pan={panMode || undefined}
+      // Le viewport ne défile jamais : le navigateur le ferait pour amener un
+      // champ de saisie à l'écran, et la vue, positionnée par transformation,
+      // se décalerait sans que `pan` le sache.
+      onScroll={(event) => {
+        event.currentTarget.scrollTop = 0
+        event.currentTarget.scrollLeft = 0
+      }}
       onPointerDown={(event) => {
         // Clic dans le vide autour de la planche : désélectionne, ou déplace la
         // vue quand la barre espace est maintenue.
         if (panMode || event.button === 1) beginPan(event)
+        else if (event.button === 0 && remarking) useRemarkStore.getState().closeComposerIfEmpty()
         else if (event.button === 0) useDesignStore.getState().setSelection([])
       }}
     >
@@ -472,6 +546,7 @@ export function Canvas() {
           ref={surfaceRef}
           className="canvas-surface"
           data-tool={tool}
+          data-mode={remarking ? 'remarks' : undefined}
           style={{
             width: design.width,
             height: design.height,
@@ -479,6 +554,13 @@ export function Canvas() {
             transform: `scale(${zoom})`,
           }}
           onPointerDown={startSurfaceGesture}
+          onPointerMove={(event) => {
+            if (!remarking || gestureRef.current.kind !== 'none') return
+            const rawId = (event.target as Element).closest('[data-node-id]')?.getAttribute('data-node-id') ?? null
+            const next = rawId === null ? null : remarkTargetOf(nodes, rawId, event.altKey, composerNodeId)
+            if (next !== hoverId) setHoverId(next)
+          }}
+          onPointerLeave={() => setHoverId(null)}
         >
           <svg
             className="canvas-svg"
@@ -499,9 +581,17 @@ export function Canvas() {
               />
             )}
 
+            {remarking && <RemarkShapes designId={design.id} layout={layout} hoverId={hoverId} />}
+
             {rubberBand && (
               <rect
-                className={rubberBand.kind === 'marquee' ? 'marquee' : 'creation-preview'}
+                className={
+                  rubberBand.kind === 'marquee'
+                    ? 'marquee'
+                    : rubberBand.kind === 'area'
+                      ? 'remark-area-draft'
+                      : 'creation-preview'
+                }
                 x={rubberBand.box.x}
                 y={rubberBand.box.y}
                 width={rubberBand.box.width}
@@ -519,7 +609,9 @@ export function Canvas() {
         */}
         {!panMode && resizable && <ResizeHandles node={resizable} layout={layout} zoom={zoom} onStart={startResize} />}
 
-        {editingNode?.type === 'text' && (
+        {remarking && <RemarkLayer design={design} nodes={nodes} layout={layout} zoom={zoom} hoverId={hoverId} />}
+
+        {!remarking && editingNode?.type === 'text' && (
           <TextEditor node={editingNode} box={boundsOf(layout, editingNode.id)} zoom={zoom} onCommit={commitText} />
         )}
       </div>

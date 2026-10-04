@@ -191,6 +191,11 @@ export function boundsOf(layout: Layout, id: string): Box {
   return layout.bounds.get(id) ?? { x: 0, y: 0, width: 0, height: 0 };
 }
 
+/** Vrai si les deux boîtes ont une surface commune ; un simple contact ne compte pas. */
+export function boxesIntersect(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 /** Boîte englobante commune à plusieurs éléments, en coordonnées document. */
 export function unionBoundsOf(layout: Layout, ids: string[]): Box | null {
   return unionBox(ids.map((id) => layout.bounds.get(id)).filter((box): box is Box => box !== undefined));

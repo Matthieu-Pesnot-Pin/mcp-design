@@ -1,4 +1,7 @@
 import { useDesignStore } from '../store/useDesignStore'
+import { roundProgress } from '@shared/feedback'
+import { draftsOf, useRemarkStore } from '../store/useRemarkStore'
+import { Icon } from './Icon'
 
 const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3]
 
@@ -22,6 +25,14 @@ export function Toolbar({
   const saveState = useDesignStore((state) => state.saveState)
   const connected = useDesignStore((state) => state.connected)
   const design = useDesignStore((state) => state.design)
+  const mode = useRemarkStore((state) => state.mode)
+  const setMode = useRemarkStore((state) => state.setMode)
+  const drafts = useRemarkStore((state) => (design ? draftsOf(state.remarks, design.id).length : 0))
+  const remarking = mode === 'remarks'
+  const openRounds = useRemarkStore(
+    (state) => state.rounds.filter((round) => roundProgress(round).status !== 'done').length
+  )
+  const setRoundsOpen = useRemarkStore((state) => state.setRoundsOpen)
 
   const saveLabel = {
     idle: 'À jour',
@@ -64,7 +75,7 @@ export function Toolbar({
           type="button"
           className="tool-button"
           onClick={undo}
-          disabled={!canUndo}
+          disabled={!canUndo || remarking}
           title="Annuler (Ctrl+Z)"
           aria-label="Annuler (Ctrl+Z)"
         >
@@ -74,7 +85,7 @@ export function Toolbar({
           type="button"
           className="tool-button"
           onClick={redo}
-          disabled={!canRedo}
+          disabled={!canRedo || remarking}
           title="Rétablir (Ctrl+Y)"
           aria-label="Rétablir (Ctrl+Y)"
         >
@@ -93,6 +104,42 @@ export function Toolbar({
           ))}
         </select>
       </label>
+
+      <div className="mode-switch" role="group" aria-label="Mode du canvas">
+        <button
+          type="button"
+          data-active={!remarking || undefined}
+          disabled={!design}
+          onClick={() => void setMode('edit')}
+          title="Éditer le design (M)"
+        >
+          <Icon name="pen-tool" />
+          Édition
+        </button>
+        <button
+          type="button"
+          data-active={remarking || undefined}
+          data-mode="remarks"
+          disabled={!design}
+          onClick={() => void setMode('remarks')}
+          title="Rédiger des remarques pour l'agent (M)"
+        >
+          <Icon name="message-square" />
+          Remarques
+          {drafts > 0 && <span className="mode-count">{drafts}</span>}
+        </button>
+      </div>
+
+      <button
+        type="button"
+        className="rounds-button"
+        onClick={() => setRoundsOpen(true)}
+        title="Retours transmis à l'agent et leur traitement"
+      >
+        <Icon name="list-checks" />
+        Retours
+        {openRounds > 0 && <span className="rounds-count">{openRounds}</span>}
+      </button>
 
       <div className="toolbar-status">
         {design && <span className="status-name">{design.name}</span>}

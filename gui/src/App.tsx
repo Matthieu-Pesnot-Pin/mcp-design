@@ -4,6 +4,9 @@ import { DesignSidebar } from './components/DesignSidebar'
 import { Inspector } from './components/Inspector'
 import { LayerPanel } from './components/LayerPanel'
 import { PanelResizer } from './components/PanelResizer'
+import { FeedbackPage } from './components/FeedbackPage'
+import { FinishFeedbackDialog } from './components/FinishFeedbackDialog'
+import { RemarkPanel } from './components/RemarkPanel'
 import { Toolbar } from './components/Toolbar'
 import { ToolPalette } from './components/ToolPalette'
 import { useIPC } from './hooks/useIPC'
@@ -11,6 +14,7 @@ import { usePanelWidth } from './hooks/usePanelWidth'
 import { usePanelVisible } from './hooks/usePanelVisible'
 import { useKeyboard } from './hooks/useKeyboard'
 import { useDesignStore } from './store/useDesignStore'
+import { useRemarkStore } from './store/useRemarkStore'
 
 export default function App() {
   useIPC()
@@ -23,6 +27,10 @@ export default function App() {
   const openDesign = useDesignStore((state) => state.openDesign)
   const setError = useDesignStore((state) => state.setError)
   const flushSave = useDesignStore((state) => state.flushSave)
+  const remarking = useRemarkStore((state) => state.mode === 'remarks')
+  const finishOpen = useRemarkStore((state) => state.finishOpen)
+  const roundsOpen = useRemarkStore((state) => state.roundsOpen)
+  const composing = useRemarkStore((state) => state.composer !== null)
 
   const [leftWidth, setLeftWidth, commitLeftWidth] = usePanelWidth('mcp-design.sidebar-width', 232)
   const [rightWidth, setRightWidth, commitRightWidth] = usePanelWidth('mcp-design.rail-width', 268)
@@ -72,7 +80,13 @@ export default function App() {
         {design ? (
           <>
             <Canvas />
-            <ToolPalette />
+            {!remarking && <ToolPalette />}
+            {remarking && !composing && (
+              <div className="remark-help">
+                Clic : remarque sur un élément · Glisser : remarque sur une zone · Alt + clic : élément exact · Échap :
+                quitter
+              </div>
+            )}
           </>
         ) : (
           <div className="workspace-empty">
@@ -86,11 +100,20 @@ export default function App() {
           <PanelResizer side="right" width={rightWidth} onResize={setRightWidth} onCommit={commitRightWidth} />
 
           <div className="right-rail">
-            <Inspector />
-            <LayerPanel />
+            {remarking ? (
+              <RemarkPanel />
+            ) : (
+              <>
+                <Inspector />
+                <LayerPanel />
+              </>
+            )}
           </div>
         </>
       )}
+
+      {roundsOpen && <FeedbackPage />}
+      {finishOpen && <FinishFeedbackDialog />}
 
       {error && (
         <div className="error-toast" role="alert">

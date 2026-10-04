@@ -11,6 +11,7 @@ import { GuiLauncher, createLogger, setupLogging } from "@imenam/mcp-gui-interfa
 import { APP_VERSION } from "./version.js";
 import { resolveLogDir } from "./core/log-dir.js";
 import { DesignStore } from "./core/design-store.js";
+import { FeedbackStore, type RemarkTargetInput } from "./core/feedback-store.js";
 import { NODE_DEFAULTS } from "./core/node-factory.js";
 import { EXPORT_FORMATS } from "./core/export.js";
 import { MIN_LINE_HEIGHT_PX } from "../shared/render.js";
@@ -33,6 +34,8 @@ import { groupDesigns } from "./tools/group-designs.js";
 import { ungroupNodes } from "./tools/ungroup-nodes.js";
 import { detachInstances } from "./tools/detach-instances.js";
 import { getChanges } from "./tools/get-changes.js";
+import { getFeedback } from "./tools/get-feedback.js";
+import { markFeedbackProcessed } from "./tools/mark-feedback-processed.js";
 import { markSynced } from "./tools/mark-synced.js";
 import { exportDesignTool } from "./tools/export-design.js";
 import { screenshotDesignTool } from "./tools/screenshot-design.js";
@@ -82,6 +85,7 @@ function getConfig() {
 getConfig();
 
 const store = new DesignStore(rootDir);
+const feedback = new FeedbackStore(store);
 
 const server = new Server({ name: "mcp-design", version: APP_VERSION }, { capabilities: { tools: {} } });
 
@@ -110,6 +114,23 @@ function reply(msg: any, type: string, data: unknown) {
 
 function replyError(msg: any, type: string, error: string) {
   broadcastToGUI({ type, correlationId: msg.correlationId, error, timestamp: new Date().toISOString() });
+}
+
+/** État des remarques renvoyé à la GUI après chaque lecture ou modification. */
+function remarksState() {
+  return { remarks: feedback.remarks(), rounds: feedback.rounds(), file: feedback.getFilePath() };
+}
+
+/** Prévient les autres onglets de la GUI que les remarques ont changé. */
+function notifyRemarksChanged() {
+  broadcastToGUI({ type: "REMARKS_UPDATED", data: {}, timestamp: new Date().toISOString() });
+}
+
+/** Supprime un design et ses remarques. */
+function deleteDesignAndRemarks(id: string) {
+  store.delete(id);
+  feedback.deleteDesign(id);
+  notifyRemarksChanged();
 }
 
 /** Notifie la GUI qu'un design a changé côté agent, pour qu'elle se rafraîchisse. */
@@ -183,7 +204,7 @@ function handleIPCMessage(msg: any) {
 
     case "DELETE_DESIGN":
       try {
-        store.delete(String(msg.data?.id));
+        deleteDesignAndRemarks(String(msg.data?.id));
         reply(msg, "DELETE_DESIGN_RESPONSE", { designs: store.list() });
       } catch (err: any) {
         replyError(msg, "DELETE_DESIGN_RESPONSE", err.message);
@@ -198,6 +219,109 @@ function handleIPCMessage(msg: any) {
         reply(msg, "SET_DESIGN_GROUP_RESPONSE", { designs: store.list() });
       } catch (err: any) {
         replyError(msg, "SET_DESIGN_GROUP_RESPONSE", err.message);
+      }
+      return;
+
+    case "LIST_REMARKS":
+      try {
+        reply(msg, "LIST_REMARKS_RESPONSE", remarksState());
+      } catch (err: any) {
+        replyError(msg, "LIST_REMARKS_RESPONSE", err.message);
+      }
+      return;
+
+    case "ADD_REMARK":
+      try {
+        const remark = feedback.add({
+          designId: String(msg.data?.designId ?? ""),
+          target: msg.data?.target as RemarkTargetInput,
+          text: String(msg.data?.text ?? ""),
+          capture: msg.data?.capture === true,
+        });
+        notifyRemarksChanged();
+        reply(msg, "ADD_REMARK_RESPONSE", { remark, ...remarksState() });
+      } catch (err: any) {
+        replyError(msg, "ADD_REMARK_RESPONSE", err.message);
+      }
+      return;
+
+    case "UPDATE_REMARK":
+      try {
+        const remark = feedback.updateText(String(msg.data?.id ?? ""), String(msg.data?.text ?? ""));
+        notifyRemarksChanged();
+        reply(msg, "UPDATE_REMARK_RESPONSE", { remark, ...remarksState() });
+      } catch (err: any) {
+        replyError(msg, "UPDATE_REMARK_RESPONSE", err.message);
+      }
+      return;
+
+    case "DELETE_REMARK":
+      try {
+        feedback.delete(String(msg.data?.id ?? ""));
+        notifyRemarksChanged();
+        reply(msg, "DELETE_REMARK_RESPONSE", remarksState());
+      } catch (err: any) {
+        replyError(msg, "DELETE_REMARK_RESPONSE", err.message);
+      }
+      return;
+
+    case "SUBMIT_FEEDBACK":
+      try {
+        const ids = Array.isArray(msg.data?.remarkIds) ? msg.data.remarkIds.map(String) : [];
+        const round = feedback.submit(ids, String(msg.data?.title ?? ""));
+        notifyRemarksChanged();
+        reply(msg, "SUBMIT_FEEDBACK_RESPONSE", { round, ...remarksState() });
+      } catch (err: any) {
+        replyError(msg, "SUBMIT_FEEDBACK_RESPONSE", err.message);
+      }
+      return;
+
+    case "RENAME_ROUND":
+      try {
+        feedback.rename(Number(msg.data?.round), String(msg.data?.title ?? ""));
+        notifyRemarksChanged();
+        reply(msg, "RENAME_ROUND_RESPONSE", remarksState());
+      } catch (err: any) {
+        replyError(msg, "RENAME_ROUND_RESPONSE", err.message);
+      }
+      return;
+
+    case "SET_REMARK_PROCESSED":
+      try {
+        feedback.setProcessed({
+          round: Number(msg.data?.round),
+          remarkIds: [String(msg.data?.remarkId ?? "")],
+          processed: msg.data?.processed === true,
+          by: "user",
+        });
+        notifyRemarksChanged();
+        reply(msg, "SET_REMARK_PROCESSED_RESPONSE", remarksState());
+      } catch (err: any) {
+        replyError(msg, "SET_REMARK_PROCESSED_RESPONSE", err.message);
+      }
+      return;
+
+    case "SET_ROUNDS_PROCESSED":
+      try {
+        const numbers =
+          msg.data?.round === undefined || msg.data?.round === null
+            ? feedback.rounds().map((round) => round.number)
+            : [Number(msg.data.round)];
+        for (const round of numbers) {
+          feedback.setProcessed({ round, processed: msg.data?.processed === true, by: "user" });
+        }
+        notifyRemarksChanged();
+        reply(msg, "SET_ROUNDS_PROCESSED_RESPONSE", remarksState());
+      } catch (err: any) {
+        replyError(msg, "SET_ROUNDS_PROCESSED_RESPONSE", err.message);
+      }
+      return;
+
+    case "GET_CAPTURE":
+      try {
+        reply(msg, "GET_CAPTURE_RESPONSE", { png: feedback.readCapture(String(msg.data?.name ?? "")).toString("base64") });
+      } catch (err: any) {
+        replyError(msg, "GET_CAPTURE_RESPONSE", err.message);
       }
       return;
 
@@ -759,6 +883,53 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "get_feedback",
+      description:
+        "Read the feedback the user wrote on the designs in the GUI. In \"Remarques\" mode the user pins remarks on a whole page, " +
+        "on an element or on a rectangular area, then clicks \"Terminer les retours\": the selected remarks are frozen into a numbered, " +
+        "named feedback round. Call this tool when the user says their feedback is done. By default it returns the oldest round that still " +
+        "has unprocessed remarks (the latest one once everything is processed): every remark with its id, its page, the element it targets " +
+        "(id, name, path, box) or the area and the elements inside it, its processing state, and the captures of elements and areas as " +
+        "images. It also lists every round with its progress. Reading never changes anything: once you have applied remarks, report it " +
+        "with mark_feedback_processed.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          round: {
+            type: "number",
+            description: "Number of the feedback round to read (default: the oldest round still to process, else the latest one).",
+          },
+          captures: {
+            type: "boolean",
+            description: "Include the captures of elements and areas as images (default true). Set false to save context.",
+          },
+        },
+      },
+    },
+    {
+      name: "mark_feedback_processed",
+      description:
+        "Report that you have handled remarks of a feedback round read with get_feedback. The user follows this progress in the GUI's " +
+        "feedback page, round by round: call it once the changes are actually made, with the ids of the remarks you handled and a short " +
+        "note of what you changed. Leave remark_ids out to mark every remark of the round.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          round: { type: "number", description: "Number of the feedback round, as shown by get_feedback." },
+          remark_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Ids of the handled remarks (rm_...), as listed by get_feedback. Omit to mark the whole round.",
+          },
+          note: {
+            type: "string",
+            description: "What you changed, in one or two sentences. Shown to the user next to each marked remark.",
+          },
+        },
+        required: ["round"],
+      },
+    },
+    {
       name: "get_changes",
       description:
         "Show every node added, modified, removed or reordered since the last mark_synced — this is how you pick up what the user changed by hand in the GUI. Reading changes never acknowledges them; call mark_synced once the changes are integrated into the code.",
@@ -899,6 +1070,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "delete_design": {
         const result = deleteDesign(store, params);
+        feedback.deleteDesign(result.designId);
+        notifyRemarksChanged();
         broadcastToGUI({ type: "DESIGNS_UPDATED", data: { designs: store.list() }, timestamp: new Date().toISOString() });
         return result;
       }
@@ -959,6 +1132,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "get_changes":
         return getChanges(store, params);
+
+      case "get_feedback":
+        return getFeedback(feedback, params);
+
+      case "mark_feedback_processed": {
+        const result = markFeedbackProcessed(feedback, params);
+        notifyRemarksChanged();
+        return result;
+      }
 
       case "mark_synced": {
         const result = markSynced(store, params);

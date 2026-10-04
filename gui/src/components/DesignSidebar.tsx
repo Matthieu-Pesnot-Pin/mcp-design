@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useDesignStore } from '../store/useDesignStore'
+import { draftsOf, useRemarkStore } from '../store/useRemarkStore'
+import { Icon } from './Icon'
 import { GROUP_SEPARATOR, buildGroupTree, groupPaths, type GroupBranch } from '../utils/design-groups'
 import type { DesignSummary } from '../types'
 
@@ -235,6 +237,7 @@ function DesignRow({ entry, depth }: { entry: DesignSummary; depth: number }) {
   const openDesign = useDesignStore((state) => state.openDesign)
   const removeDesign = useDesignStore((state) => state.removeDesign)
   const setDesignGroup = useDesignStore((state) => state.setDesignGroup)
+  const drafts = useRemarkStore((state) => draftsOf(state.remarks, entry.id).length)
 
   return (
     <li>
@@ -252,7 +255,15 @@ function DesignRow({ entry, depth }: { entry: DesignSummary; depth: number }) {
         data-active={current?.id === entry.id || undefined}
         onClick={() => void openDesign(entry.id)}
       >
-        <span className="design-name">{entry.name}</span>
+        <span className="design-name">
+          {entry.name}
+          {drafts > 0 && (
+            <span className="remark-badge" title={`${drafts} remarque${drafts > 1 ? 's' : ''} non transmise${drafts > 1 ? 's' : ''}`}>
+              <Icon name="message-square" size={10} strokeWidth={2.5} />
+              {drafts}
+            </span>
+          )}
+        </span>
         <span className="design-meta">
           {entry.width} × {entry.height} · {entry.nodeCount} élément{entry.nodeCount > 1 ? 's' : ''}
         </span>

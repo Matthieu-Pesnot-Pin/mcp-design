@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useDesignStore } from '../store/useDesignStore'
+import { useRemarkStore } from '../store/useRemarkStore'
 import type { Tool } from '../types'
 
 // « i » réarme l'outil icône avec la dernière icône choisie ; en choisir une
@@ -29,10 +30,32 @@ export function useKeyboard() {
         return
       }
 
+      const remarks = useRemarkStore.getState()
+      // La page des retours recouvre le canvas : seul Échap, qui la ferme, s'applique.
+      if (remarks.roundsOpen) {
+        if (event.key === 'Escape') remarks.setRoundsOpen(false)
+        return
+      }
+
       const store = useDesignStore.getState()
       if (!store.design) return
 
       const modifier = event.ctrlKey || event.metaKey
+
+      if (!modifier && !event.altKey && event.key.toLowerCase() === 'm') {
+        void remarks.setMode(remarks.mode === 'remarks' ? 'edit' : 'remarks')
+        return
+      }
+
+      // En mode Remarques le design ne se modifie pas : aucun raccourci
+      // d'édition ne s'applique. Échap ferme la remarque en cours, puis le mode.
+      if (remarks.mode === 'remarks') {
+        if (event.key !== 'Escape') return
+        if (remarks.finishOpen) remarks.setFinishOpen(false)
+        else if (remarks.composer) remarks.closeComposer()
+        else void remarks.setMode('edit')
+        return
+      }
 
       if (modifier && event.key.toLowerCase() === 'z') {
         event.preventDefault()

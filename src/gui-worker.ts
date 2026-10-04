@@ -145,7 +145,7 @@ function ipcRequest(type: string, data?: any, timeout = 5000): Promise<any> {
   });
 }
 
-const PUSHED_EVENTS = new Set(["INITIAL_STATE", "DESIGNS_UPDATED", "DESIGN_UPDATED"]);
+const PUSHED_EVENTS = new Set(["INITIAL_STATE", "DESIGNS_UPDATED", "DESIGN_UPDATED", "REMARKS_UPDATED"]);
 
 function setupIpcErrorHandlers() {
   process.on("error", (err: any) => {
@@ -306,6 +306,106 @@ app.delete("/api/designs/:id", async (c) => {
   const result = await ipcRequest("DELETE_DESIGN", { id: c.req.param("id") }, 10000);
   if (result.error) return c.json({ error: result.error }, 404);
   return c.json(result.data);
+});
+
+app.get("/api/remarks", async (c) => {
+  const result = await ipcRequest("LIST_REMARKS");
+  if (result.error) return c.json({ error: result.error }, 500);
+  return c.json(result.data);
+});
+
+app.post("/api/remarks", async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  // La capture est rendue côté serveur : un délai plus long qu'une simple écriture.
+  const result = await ipcRequest("ADD_REMARK", body, 20000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
+app.put("/api/remarks/:id", async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const result = await ipcRequest("UPDATE_REMARK", { id: c.req.param("id"), text: body?.text }, 10000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
+app.delete("/api/remarks/:id", async (c) => {
+  const result = await ipcRequest("DELETE_REMARK", { id: c.req.param("id") }, 10000);
+  if (result.error) return c.json({ error: result.error }, 404);
+  return c.json(result.data);
+});
+
+app.post("/api/feedback", async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const result = await ipcRequest("SUBMIT_FEEDBACK", { remarkIds: body?.remarkIds, title: body?.title }, 10000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
+app.put("/api/rounds/:round", async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const result = await ipcRequest("RENAME_ROUND", { round: c.req.param("round"), title: body?.title }, 10000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
+app.put("/api/rounds/:round/remarks/:id", async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const result = await ipcRequest(
+    "SET_REMARK_PROCESSED",
+    { round: c.req.param("round"), remarkId: c.req.param("id"), processed: body?.processed },
+    10000
+  );
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
+app.post("/api/feedback/processed", async (c) => {
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  // Sans numéro de retour, tous les retours sont visés.
+  const result = await ipcRequest("SET_ROUNDS_PROCESSED", { round: body?.round, processed: body?.processed }, 10000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
+app.get("/api/captures/:name", async (c) => {
+  const result = await ipcRequest("GET_CAPTURE", { name: c.req.param("name") }, 10000);
+  if (result.error) return c.json({ error: result.error }, 404);
+  return c.body(Buffer.from(result.data.png, "base64"), 200, {
+    "Content-Type": "image/png",
+    // Une capture n'est jamais réécrite : son nom suit l'id de la remarque.
+    "Cache-Control": "private, max-age=31536000, immutable",
+  });
 });
 
 // Fichiers statiques de la SPA

@@ -1,6 +1,7 @@
 import { Resvg } from "@resvg/resvg-js";
 import type { Design } from "../../shared/schemas/design.schema.js";
-import { documentToSvg, subtreeToSvg, type RenderDocument, type RenderNode } from "../../shared/render.js";
+import { regionToSvg, subtreeToSvg, type RenderDocument, type RenderNode } from "../../shared/render.js";
+import type { Box } from "../../shared/tree.js";
 
 /**
  * Capture d'écran d'un design.
@@ -17,6 +18,8 @@ export const DEFAULT_MAX_DIMENSION = 1568;
 export interface ScreenshotOptions {
   /** Cadre la capture sur ce noeud (typiquement un groupe) au lieu de tout l'artboard. */
   nodeId?: string;
+  /** Cadre la capture sur cette zone, en coordonnées document. Exclusif de `nodeId`. */
+  region?: Box;
   /** Facteur de zoom appliqué avant l'écrêtage par maxDimension (défaut 1). */
   scale?: number;
   /** Marge, en pixels du design, ajoutée autour du noeud capturé. */
@@ -68,10 +71,38 @@ export function rasterize(svg: string, scale: number): { png: Buffer; width: num
   return { png: Buffer.from(rendered.asPng()), width: rendered.width, height: rendered.height };
 }
 
+function artboardOf(doc: RenderDocument): Box {
+  return { x: 0, y: 0, width: doc.width, height: doc.height };
+}
+
+/**
+ * Rendu d'une zone de la planche, découpé dans le rendu de la planche entière.
+ *
+ * resvg panique, en emportant le processus, sur un élément semi-transparent
+ * dont le dessin tombe entièrement hors du cadre — et la boîte d'un élément ne
+ * dit pas où tombe son dessin : un texte occupe rarement toute la largeur de sa
+ * boîte. Dans la planche entière, tout ce qui est visible est dans le cadre ; la
+ * zone en est ensuite extraite par une image, qui ne porte aucune opacité.
+ */
+function rasterizeRegion(doc: RenderDocument, region: Box, scale: number): { png: Buffer; width: number; height: number } {
+  const artboard = rasterize(regionToSvg(doc, artboardOf(doc)), scale);
+  const crop =
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
+    `width="${region.width}" height="${region.height}" ` +
+    `viewBox="${region.x} ${region.y} ${region.width} ${region.height}">` +
+    `<image x="0" y="0" width="${doc.width}" height="${doc.height}" preserveAspectRatio="none" ` +
+    `xlink:href="data:image/png;base64,${artboard.png.toString("base64")}" />` +
+    `</svg>`;
+  return rasterize(crop, scale);
+}
+
 export function screenshotDesign(design: Design, options: ScreenshotOptions = {}): Screenshot {
   const doc = toDocument(design);
   const padding = Math.max(0, options.padding ?? 0);
-  const svg = options.nodeId ? subtreeToSvg(doc, options.nodeId, padding) : documentToSvg(doc);
+  const region = options.region;
+  // La planche entière est rendue comme une zone : un élément semi-transparent
+  // posé hors de l'artboard en est omis.
+  const svg = options.nodeId ? subtreeToSvg(doc, options.nodeId, padding) : regionToSvg(doc, region ?? artboardOf(doc));
 
   const source = svgSize(svg);
   if (!(source.width > 0) || !(source.height > 0)) {
@@ -83,7 +114,7 @@ export function screenshotDesign(design: Design, options: ScreenshotOptions = {}
   // L'écrêtage ne peut que réduire : un zoom demandé plus petit reste respecté.
   const scale = Math.min(requested, maxDimension / Math.max(source.width, source.height));
 
-  const rendered = rasterize(svg, scale);
+  const rendered = region ? rasterizeRegion(doc, region, scale) : rasterize(svg, scale);
 
   return {
     png: rendered.png,

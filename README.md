@@ -4,10 +4,13 @@ Un canvas de design pilotable par un agent, avec une interface graphique où l'u
 
 L'agent compose une planche (formes, texte) via des outils MCP. L'utilisateur ouvre la GUI, déplace, retaille, recolore, réécrit. L'agent relit ensuite **exactement ce qui a changé** et l'intègre dans le code de l'application.
 
+L'utilisateur peut aussi, sans toucher au design, **épingler des remarques** sur une page, un élément ou une zone. Il les transmet en un retour nommé que l'agent lit avec `get_feedback`, captures comprises ; l'agent déclare ensuite ce qu'il a traité avec `mark_feedback_processed`, et l'utilisateur suit l'avancement de chaque retour dans la page « Retours ».
+
 ```
 Agent ──add_nodes/update_nodes──▶  Design  ◀──glisser-déposer──  Utilisateur (GUI)
   ▲                                                                    │
-  └──────────── get_changes ──── diff depuis la dernière baseline ──────┘
+  ├──────────── get_changes ──── diff depuis la dernière baseline ──────┤
+  └──────────── get_feedback ─── remarques transmises (retour n°N) ─────┘
 ```
 
 ---
@@ -72,7 +75,7 @@ Exemple d'entrée générée :
 | `APP_NAME` | Nom affiché dans le dashboard du proxy. `PROXY_APP_NAME` puis `GUI_NAME` sont acceptés en repli. |
 | `APP_PATH_PREFIX` | Préfixe de namespace ajouté au chemin **par défaut** (ex. `/abc123` → `/abc123/design-gui`). Sert à isoler plusieurs instances sous un même proxy. |
 | `APP_GROUP` | Section repliable du dashboard du proxy (facultatif). |
-| `MCP_DESIGN_DATA_DIR` | Répertoire de stockage des designs. `MCP_DATA_DIR` est accepté en repli. Défaut : `<package>/.design-data`. |
+| `MCP_DESIGN_DATA_DIR` | Répertoire de stockage des designs et des remarques. `MCP_DATA_DIR` est accepté en repli. Défaut : `<package>/.design-data`. |
 | `MCP_LOG_DIR` | Répertoire des logs. Défaut : `<data>/logs`. |
 
 `PROXY_URL` et `APP_PORT` s'excluent : `PROXY_URL` prime si les deux sont renseignés. **Si aucune des deux n'est définie, la GUI est simplement désactivée** — les outils MCP continuent de fonctionner.
@@ -241,6 +244,17 @@ Un lot est intégralement validé avant la moindre écriture : une entrée inval
 
 **`get_changes` n'acquitte jamais ce qu'il montre.** Seul `mark_synced` déplace la baseline, et il ne doit être appelé qu'une fois les modifications réellement reportées dans le code. Un simple appel de lecture ne peut donc pas faire disparaître un diff que l'agent n'a pas encore traité.
 
+### Lire les remarques de l'utilisateur
+
+| Outil | Effet |
+|---|---|
+| `get_feedback` | Renvoie le plus ancien retour qui a encore des remarques à traiter (le dernier quand tout est traité), ou celui demandé par `round`. Pour chaque remarque : son identifiant, la page, puis la page entière, l'élément visé (id, nom, chemin, boîte) ou la zone et les éléments cités, le texte et son état de traitement. Les captures d'éléments et de zones suivent **en images**, numérotées comme dans le texte ; `captures: false` les omet. La réponse se termine par la liste de tous les retours et de leur avancement. |
+| `mark_feedback_processed` | Déclare traitées des remarques d'un retour (`round`, `remark_ids` — toutes si omis), avec une `note` sur ce qui a été fait. C'est ce que l'utilisateur voit dans la page « Retours ». |
+
+Un retour est **figé** au moment où l'utilisateur clique sur « Terminer les retours » : `get_feedback` peut le relire autant de fois que nécessaire, rien ne change. Seuls son nom (renommable dans la GUI) et le suivi du traitement évoluent ; **lire un retour ne le marque jamais traité**, seul `mark_feedback_processed` (ou l'utilisateur) le fait. Le texte est celui que la GUI affiche en aperçu avant l'enregistrement — même fonction de mise en forme, donc même contenu. Tant qu'aucun retour n'existe, l'outil dit combien de remarques attendent encore dans la GUI.
+
+Les remarques vivent dans `<MCP_DESIGN_DATA_DIR>/feedback/remarks.json`, les captures PNG dans `<MCP_DESIGN_DATA_DIR>/feedback/captures/` : le même dossier de données que les designs, celui fixé par la configuration du projet.
+
 ### GUI
 
 | Outil | Effet |
@@ -263,6 +277,13 @@ screenshot_design { design_id: "landing" }    ← ce que ça donne réellement, 
 export_design { design_id: "landing", format: "html" }
   … l'agent reporte les valeurs dans le code de l'application …
 mark_synced   { design_id: "landing" }        ← acquittement
+
+  … l'utilisateur passe en mode Remarques, commente, clique « Terminer les retours »,
+    puis dit à l'agent qu'il a terminé …
+
+get_feedback  {}                              ← retour à traiter : remarques + captures
+  … l'agent applique les remarques …
+mark_feedback_processed { round: 1, remark_ids: ["rm_…"], note: "…" }   ← suivi visible dans la GUI
 ```
 
 ---
@@ -290,6 +311,26 @@ La sauvegarde est automatique et différée. Une modification faite par l'agent 
 
 Le badge « n à synchroniser » d'une planche indique le nombre de modifications que l'agent n'a pas encore acquittées.
 
+### Mode Remarques
+
+La bascule **Édition / Remarques** de la barre d'outils (raccourci `M`) passe le canvas en lecture : rien ne s'y déplace, et le rail de droite affiche les remarques à la place de l'inspecteur.
+
+- **Remarque sur un élément** — un clic vise le **groupe le plus haut**, comme en édition ; un nouveau clic à l'intérieur descend d'un niveau, `Alt+clic` vise l'élément exact. La bulle de saisie affiche le chemin de l'élément : un clic sur un niveau vise ce parent.
+- **Remarque sur une zone** — glisser trace un rectangle. La bulle montre l'aperçu de la zone et les **éléments détectés** : un élément entièrement compris est cité tel quel, un groupe qui déborde est ouvert pour citer ceux de ses éléments que la zone touche, un élément qui déborde est marqué « en partie » et décoché par défaut.
+- **Remarque sur la page** — depuis le panneau, une seule remarque en cours par page.
+- **Captures** — pour un élément ou une zone, « Joindre une capture » (coché par défaut) enregistre un PNG de ce que l'utilisateur commentait, rendu par le serveur au moment de la remarque.
+- **Pastilles** — chaque remarque d'élément ou de zone porte un numéro sur la planche ; survoler une carte du panneau met sa cible en évidence, cliquer une pastille désigne sa carte.
+- **Terminer les retours** — demande un **nom** pour le retour (« Retour n°N » proposé), choisit le périmètre (cette page ou toutes) et les remarques à transmettre, et montre exactement le texte que l'agent recevra. L'enregistrement fige un **retour numéroté et nommé**.
+- **Après l'envoi** — les remarques restent visibles en lecture seule, marquées « Transmise · *nom du retour* », puis « Traitée » une fois traitées : pastille creuse, zone en pointillés. Une case du panneau les masque. Une remarque dont l'élément a disparu depuis le signale.
+
+### Page « Retours »
+
+Le bouton **Retours** de la barre d'outils (avec le nombre de retours pas encore entièrement traités) ouvre la liste de tous les retours, du plus récent au plus ancien, chacun avec son état — *À traiter*, *En cours* (n/total), *Traité* — et une barre d'avancement. Le détail d'un retour reprend ses remarques page par page, avec leur capture, et pour chacune : *À traiter*, ou *Traitée par l'agent / par vous* avec la date et la note de l'agent. Le nom du retour se modifie en place ; une case coche ou rouvre une remarque à la main, et « Tout marquer comme traité » (ou « Tout rouvrir ») agit sur tout le retour affiché ; le même bouton en haut de la page traite d'un coup tous les retours en attente, après confirmation. Une remarque déjà traitée par l'agent garde son auteur et sa note ; « Ouvrir la page » ramène sur la planche en mode Remarques. `Échap` ferme la page.
+
+Les retours créés avant l'arrivée des noms reçoivent « Retour n°N », et aucune de leurs remarques n'est considérée comme traitée.
+
+`Ctrl+Entrée` enregistre une remarque, `Échap` la ferme, puis quitte le mode. Le badge violet d'une page dans la liste compte ses remarques non transmises.
+
 ---
 
 ## Architecture
@@ -301,7 +342,7 @@ Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-in
 
 Les deux communiquent par IPC. Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
 
-`shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/instances.ts` l'expansion des instances en groupes, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
+`shared/feedback.ts` porte le modèle des remarques, la détection des éléments d'une zone et la mise en forme d'un retour ; le serveur et la GUI l'importent tous deux, ce qui garantit que l'aperçu affiché est le texte transmis. `shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/instances.ts` l'expansion des instances en groupes, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
 
 Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle (y compris dans le graphe composant/instance), taille des groupes et des instances recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
 

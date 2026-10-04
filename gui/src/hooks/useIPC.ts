@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useDesignStore } from '../store/useDesignStore'
+import { useRemarkStore } from '../store/useRemarkStore'
 
 const TAG = '[mcp-design]'
 
@@ -24,6 +25,7 @@ export function useIPC() {
     eventSource.onopen = () => {
       useDesignStore.getState().setConnected(true)
       void useDesignStore.getState().refreshDesigns()
+      void useRemarkStore.getState().refresh()
     }
 
     eventSource.onerror = () => {
@@ -74,6 +76,8 @@ export function useIPC() {
       } else if (message.type === 'DESIGN_UPDATED') {
         void store.refreshDesigns()
         if (message.data?.designId) void store.reloadCurrent(message.data.designId)
+      } else if (message.type === 'REMARKS_UPDATED') {
+        void useRemarkStore.getState().refresh()
       }
     }
 

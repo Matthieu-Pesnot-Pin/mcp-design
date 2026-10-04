@@ -7,7 +7,16 @@
  * importable depuis le bundle GUI.
  */
 
-import { boundsOf, childrenByParent, computeLayout, normalizedBox, spaceOriginOf, type Box, type Layout } from "./tree.js";
+import {
+  boundsOf,
+  boxesIntersect,
+  childrenByParent,
+  computeLayout,
+  normalizedBox,
+  spaceOriginOf,
+  type Box,
+  type Layout,
+} from "./tree.js";
 import { expandInstances } from "./instances.js";
 import {
   DEFAULT_ICON_STROKE_WIDTH,
@@ -318,31 +327,38 @@ export interface RenderDocument {
 /**
  * Rend une liste de noeuds frères, en descendant récursivement dans les groupes.
  * Partagé par le rendu plein document et le rendu cadré sur un seul élément.
+ *
+ * Avec `frame`, un élément semi-transparent qui ne recoupe pas le cadre est
+ * omis : il n'y serait pas visible, et resvg panique — en emportant le
+ * processus — sur un élément semi-transparent dessiné entièrement hors du cadre.
  */
 function renderSiblings(
   nodes: RenderNode[],
   children: Map<string | null, RenderNode[]>,
   layout: Layout,
-  depth: number
+  depth: number,
+  frame?: Box
 ): string[] {
   const pad = "  ".repeat(depth + 1);
   return nodes.flatMap((node) => {
+    const bounds = boundsOf(layout, node.id);
+    if (frame && node.opacity < 1 && !boxesIntersect(bounds, frame)) return [];
     if (node.type !== "group") return [`${pad}${nodeToSvg(node)}`];
 
-    const bounds = boundsOf(layout, node.id);
     const origin = layout.origin.get(node.id) ?? { x: 0, y: 0 };
     const center = { cx: bounds.x + bounds.width / 2 - origin.x, cy: bounds.y + bounds.height / 2 - origin.y };
     const opacity = node.opacity >= 1 ? "" : ` opacity="${round(node.opacity)}"`;
 
     return [
       `${pad}<g transform="${groupTransform(node, center)}"${opacity}>`,
-      ...renderSiblings(children.get(node.id) ?? [], children, layout, depth + 1),
+      ...renderSiblings(children.get(node.id) ?? [], children, layout, depth + 1, frame),
       `${pad}</g>`,
     ];
   });
 }
 
-export function documentToSvg(doc: RenderDocument): string {
+/** Contenu SVG de la planche, en coordonnées document, limité à `frame` s'il est donné. */
+function documentBody(doc: RenderDocument, frame?: Box): string {
   // Les instances sont resolues ici, une fois pour toutes : en dessous, il n'y
   // a plus que des groupes ordinaires.
   const nodes = expandInstances(doc.nodes);
@@ -351,11 +367,34 @@ export function documentToSvg(doc: RenderDocument): string {
 
   // Un groupe devient un <g> : ses enfants gardent leurs coordonnées locales,
   // c'est la transformation du conteneur qui les place.
-  const body = renderSiblings(children.get(null) ?? [], children, layout, 0).join("\n");
+  return renderSiblings(children.get(null) ?? [], children, layout, 0, frame).join("\n");
+}
+
+export function documentToSvg(doc: RenderDocument): string {
+  const body = documentBody(doc);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" ` +
     `viewBox="0 0 ${doc.width} ${doc.height}">\n` +
     `  <rect x="0" y="0" width="${doc.width}" height="${doc.height}" fill="${escapeXml(doc.background)}" />\n` +
+    (body ? `${body}\n` : "") +
+    `</svg>`
+  );
+}
+
+/**
+ * SVG cadré sur une zone rectangulaire de la planche, en coordonnées document.
+ * Tout ce qui recoupe la zone y figure, coupé à ses bords ; les éléments
+ * semi-transparents qui ne la recoupent pas sont omis.
+ */
+export function regionToSvg(doc: RenderDocument, region: Box): string {
+  const body = documentBody(doc, region);
+  const width = round(Math.max(1, region.width));
+  const height = round(Math.max(1, region.height));
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `viewBox="${round(region.x)} ${round(region.y)} ${width} ${height}">\n` +
+    `  <rect x="${round(region.x)}" y="${round(region.y)}" width="${width}" height="${height}" ` +
+    `fill="${escapeXml(doc.background)}" />\n` +
     (body ? `${body}\n` : "") +
     `</svg>`
   );
