@@ -6,8 +6,7 @@
     "test": "test"
   },
   "scripts": {
-    "generate-version": "node scripts/generate-version.js",
-    "build:backend": "npm run generate-version && tsc",
+    "build:backend": "tsc",
     "build:gui": "cd gui && npm install && npm run build",
     "build": "npm run build:backend && npm run build:gui",
     "start": "node dist/src/index.js",
