@@ -1,6 +1,7 @@
 import { Resvg } from "@resvg/resvg-js";
 import type { Design } from "../../shared/schemas/design.schema.js";
-import { regionToSvg, subtreeToSvg, type RenderDocument, type RenderNode } from "../../shared/render.js";
+import { regionToSvg, subtreeToSvg, type RenderDocument, type RenderNode, type RenderOptions } from "../../shared/render.js";
+import type { ImageStore } from "./image-store.js";
 import type { Box } from "../../shared/tree.js";
 
 /**
@@ -25,6 +26,8 @@ export interface ScreenshotOptions {
   /** Marge, en pixels du design, ajoutée autour du noeud capturé. */
   padding?: number;
   maxDimension?: number;
+  /** Médiathèque où lire les images de la planche. Obligatoire dès qu'elle en contient. */
+  images?: ImageStore;
 }
 
 export interface Screenshot {
@@ -84,8 +87,8 @@ function artboardOf(doc: RenderDocument): Box {
  * boîte. Dans la planche entière, tout ce qui est visible est dans le cadre ; la
  * zone en est ensuite extraite par une image, qui ne porte aucune opacité.
  */
-function rasterizeRegion(doc: RenderDocument, region: Box, scale: number): { png: Buffer; width: number; height: number } {
-  const artboard = rasterize(regionToSvg(doc, artboardOf(doc)), scale);
+function rasterizeRegion(doc: RenderDocument, region: Box, scale: number, render: RenderOptions): { png: Buffer; width: number; height: number } {
+  const artboard = rasterize(regionToSvg(doc, artboardOf(doc), render), scale);
   const crop =
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
     `width="${region.width}" height="${region.height}" ` +
@@ -100,9 +103,13 @@ export function screenshotDesign(design: Design, options: ScreenshotOptions = {}
   const doc = toDocument(design);
   const padding = Math.max(0, options.padding ?? 0);
   const region = options.region;
+  const images = options.images;
+  const render: RenderOptions = images ? { imageHref: (name) => images.dataUri(name) } : {};
   // La planche entière est rendue comme une zone : un élément semi-transparent
   // posé hors de l'artboard en est omis.
-  const svg = options.nodeId ? subtreeToSvg(doc, options.nodeId, padding) : regionToSvg(doc, region ?? artboardOf(doc));
+  const svg = options.nodeId
+    ? subtreeToSvg(doc, options.nodeId, padding, render)
+    : regionToSvg(doc, region ?? artboardOf(doc), render);
 
   const source = svgSize(svg);
   if (!(source.width > 0) || !(source.height > 0)) {
@@ -114,7 +121,7 @@ export function screenshotDesign(design: Design, options: ScreenshotOptions = {}
   // L'écrêtage ne peut que réduire : un zoom demandé plus petit reste respecté.
   const scale = Math.min(requested, maxDimension / Math.max(source.width, source.height));
 
-  const rendered = region ? rasterizeRegion(doc, region, scale) : rasterize(svg, scale);
+  const rendered = region ? rasterizeRegion(doc, region, scale, render) : rasterize(svg, scale);
 
   return {
     png: rendered.png,

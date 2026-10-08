@@ -18,12 +18,15 @@ import { NODE_FIELD_DOCS } from "../node-fields.js";
  * d'un noeud sont exprimees dans l'espace de son parent.
  */
 
-export const NODE_TYPES = ["rect", "ellipse", "line", "text", "icon", "group", "instance"] as const;
+export const NODE_TYPES = ["rect", "ellipse", "line", "text", "icon", "image", "group", "instance"] as const;
 export const NodeTypeSchema = z.enum(NODE_TYPES);
 export type NodeType = z.infer<typeof NodeTypeSchema>;
 
 export const TEXT_ALIGNS = ["left", "center", "right"] as const;
 export const TextAlignSchema = z.enum(TEXT_ALIGNS);
+
+export const IMAGE_FITS = ["cover", "contain", "fill"] as const;
+export const ImageFitSchema = z.enum(IMAGE_FITS);
 
 /**
  * Un seul schéma pour tous les types de noeuds : les champs non pertinents pour
@@ -66,6 +69,14 @@ export const DesignNodeSchema = z.object({
    * se redessiner, et un agent qui relit le design sait ce qu'elle represente.
    */
   icon: z.string().describe(NODE_FIELD_DOCS.icon).optional(),
+
+  /**
+   * Image — le nom du fichier dans la mediatheque du dossier de donnees, jamais
+   * ses octets : le design reste un JSON lisible, et une meme image posee
+   * plusieurs fois n'est stockee qu'une fois.
+   */
+  image: z.string().describe(NODE_FIELD_DOCS.image).optional(),
+  fit: ImageFitSchema.describe(NODE_FIELD_DOCS.fit).optional(),
 
   // Texte — fontSize et lineHeight sont tous deux en PIXELS.
   text: z.string().describe(NODE_FIELD_DOCS.text).optional(),

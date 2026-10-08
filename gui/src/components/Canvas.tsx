@@ -8,6 +8,7 @@ import { useRemarkStore } from '../store/useRemarkStore'
 import { remarkTargetOf } from '../utils/remarks'
 import { RemarkLayer, RemarkShapes } from './RemarkOverlay'
 import { rectsIntersect, round } from '../utils/nodes'
+import { api } from '../utils/api'
 import type { DesignNode, Tool } from '../types'
 
 type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'start' | 'end'
@@ -150,6 +151,9 @@ function resizeNode(node: DesignNode, handle: HandleId, dx: number, dy: number):
 
   return { x: round(x), y: round(y), width: round(width), height: round(height) }
 }
+
+/** Le canvas charge les images depuis la médiathèque, via l'API du worker. */
+const CANVAS_RENDER = { imageHref: api.imageUrl }
 
 export function Canvas() {
   const design = useDesignStore((state) => state.design)
@@ -509,7 +513,7 @@ export function Canvas() {
           data-node-id={node.id}
           data-hidden={node.id === editingTextId || undefined}
           onPointerDown={(event) => startNodeGesture(event, node)}
-          dangerouslySetInnerHTML={{ __html: nodeToSvg(node) }}
+          dangerouslySetInnerHTML={{ __html: nodeToSvg(node, CANVAS_RENDER) }}
         />
       )
     })

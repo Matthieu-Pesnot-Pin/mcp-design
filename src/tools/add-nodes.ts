@@ -21,6 +21,7 @@ export function addNodes(store: DesignStore, args: Record<string, unknown> | und
   // Tout est construit avant d'écrire : une entrée invalide n'ajoute rien du tout.
   input.forEach((raw, index) => {
     const node = buildNode(raw as CreateNodeInput, existingIds, current.nodes.length + index + 1);
+    if (node.type === "image") store.images.requireStored(node.image ?? "");
     existingIds.add(node.id);
     created.push(node);
   });

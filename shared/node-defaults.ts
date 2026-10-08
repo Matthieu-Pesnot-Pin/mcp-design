@@ -13,7 +13,7 @@ import { DEFAULT_ICON_STROKE_WIDTH, ICON_GRID } from "./icons/index.js";
 
 export type NodeKind = RenderNode["type"];
 
-export const NODE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon", "group", "instance"];
+export const NODE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon", "image", "group", "instance"];
 
 /** Types que l'utilisateur peut dessiner directement ; un groupe se cree a partir d'une selection. */
 export const DRAWABLE_KINDS: readonly NodeKind[] = ["rect", "ellipse", "line", "text", "icon"];
@@ -49,6 +49,9 @@ export const NODE_DEFAULTS: Record<NodeKind, Partial<RenderNode>> = {
     stroke: "#1a1a18",
     strokeWidth: DEFAULT_ICON_STROKE_WIDTH,
   },
+  // Une image importee sans taille prend ses dimensions naturelles : celles-ci
+  // ne servent qu'a un noeud ecrit a la main sans largeur ni hauteur.
+  image: { width: 200, height: 150, fit: "cover" },
   // Un groupe n'a pas de taille propre : elle est deduite de son contenu.
   group: { width: 0, height: 0 },
   // Une instance non plus : sa taille est celle du composant qu'elle reproduit.
@@ -62,6 +65,7 @@ export const NODE_STYLE_FIELDS: Record<NodeKind, ReadonlyArray<keyof RenderNode>
   line: ["stroke", "strokeWidth"],
   text: ["text", "color", "fontSize", "fontFamily", "fontWeight", "fontStyle", "textAlign", "lineHeight"],
   icon: ["icon", "fill", "stroke", "strokeWidth"],
+  image: ["image", "fit"],
   group: [],
   // Rien ne se surcharge dans une instance : son apparence est celle de son
   // composant. Seul le lien lui-meme se change, ce qui l'echange de composant.
@@ -92,6 +96,7 @@ const LABELS: Record<NodeKind, string> = {
   line: "Ligne",
   text: "Texte",
   icon: "Icône",
+  image: "Image",
   group: "Groupe",
   instance: "Instance",
 };

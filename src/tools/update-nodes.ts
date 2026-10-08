@@ -28,7 +28,9 @@ export function updateNodes(store: DesignStore, args: Record<string, unknown> | 
     if (Object.keys(fields).length === 0) {
       throw new DesignError(`Update for node "${nodeId}" contains no field to change.`);
     }
-    return applyPatch(node, fields);
+    const next = applyPatch(node, fields);
+    if (next.type === "image" && fields.image !== undefined) store.images.requireStored(next.image ?? "");
+    return next;
   });
 
   const patchedById = new Map(patched.map((n) => [n.id, n]));

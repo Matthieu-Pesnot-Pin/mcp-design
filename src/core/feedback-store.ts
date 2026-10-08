@@ -171,9 +171,9 @@ export class FeedbackStore {
   private renderCapture(designId: string, target: RemarkTarget): Buffer {
     const design = this.designs.get(designId);
     if (target.kind === "node") {
-      return screenshotDesign(design, { nodeId: target.element.id, padding: NODE_CAPTURE_PADDING }).png;
+      return screenshotDesign(design, { nodeId: target.element.id, padding: NODE_CAPTURE_PADDING, images: this.designs.images }).png;
     }
-    if (target.kind === "area") return screenshotDesign(design, { region: target.box }).png;
+    if (target.kind === "area") return screenshotDesign(design, { region: target.box, images: this.designs.images }).png;
     throw new DesignError("A page remark has no capture.");
   }
 

@@ -99,4 +99,6 @@ export const api = {
     }),
 
   captureUrl: (name: string) => `api/captures/${encodeURIComponent(name)}`,
+
+  imageUrl: (name: string) => `api/images/${encodeURIComponent(name)}`,
 }

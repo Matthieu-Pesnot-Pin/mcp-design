@@ -22,7 +22,7 @@ export function exportDesignTool(
   }
 
   const design = store.get(id);
-  const content = render(design, format);
+  const content = render(design, format, store.images);
 
   const destination = typeof args?.destination_path === "string" ? args.destination_path.trim() : "";
   if (!destination) {

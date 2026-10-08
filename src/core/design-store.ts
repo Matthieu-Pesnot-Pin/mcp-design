@@ -13,6 +13,7 @@ import { normalizeHierarchy } from "./hierarchy.js";
 import { migrateDesign } from "./migrate.js";
 import { shortId, slugify } from "./ids.js";
 import { countChanges } from "./diff.js";
+import { ImageStore } from "./image-store.js";
 
 export interface CreateDesignInput {
   name: string;
@@ -52,6 +53,8 @@ interface CacheEntry {
 export class DesignStore {
   private readonly dataDir: string;
   private readonly designsDir: string;
+  /** Images posées sur les planches, partagées par tous les designs du dossier de données. */
+  readonly images: ImageStore;
   /**
    * Cache mémoire : la GUI sauvegarde à chaque geste, relire le disque à chaque
    * fois serait inutile. Chaque entrée retient la signature du fichier au moment
@@ -67,6 +70,7 @@ export class DesignStore {
     this.dataDir = configured ? path.resolve(configured) : path.join(rootDir, ".design-data");
     this.designsDir = path.join(this.dataDir, "designs");
     fs.mkdirSync(this.designsDir, { recursive: true });
+    this.images = new ImageStore(this.dataDir);
   }
 
   getDataDir(): string {

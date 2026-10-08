@@ -18,6 +18,7 @@ export function screenshotDesignTool(store: DesignStore, args: Record<string, un
 
   const shot = screenshotDesign(design, {
     nodeId,
+    images: store.images,
     scale: args?.scale === undefined ? undefined : Number(args.scale),
     padding: args?.padding === undefined ? (nodeId ? NODE_PADDING : 0) : Number(args.padding),
   });

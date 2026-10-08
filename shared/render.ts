@@ -33,7 +33,7 @@ export type { Box, Point } from "./tree.js";
 
 export interface RenderNode {
   id: string;
-  type: "rect" | "ellipse" | "line" | "text" | "icon" | "group" | "instance";
+  type: "rect" | "ellipse" | "line" | "text" | "icon" | "image" | "group" | "instance";
   name: string;
   /** Groupe conteneur, ou null a la racine. Les coordonnees sont relatives a ce parent. */
   parentId: string | null;
@@ -51,6 +51,10 @@ export interface RenderNode {
   radius?: number;
   /** Nom de l'icone dans la bibliotheque embarquee, p.ex. "shopping-cart". Type `icon` uniquement. */
   icon?: string;
+  /** Nom du fichier dans la mediatheque, p.ex. "img_3f9a1c2b7d4e.png". Type `image` uniquement. */
+  image?: string;
+  /** Remplissage de la boite par l'image. Type `image` uniquement. */
+  fit?: "cover" | "contain" | "fill";
   text?: string;
   color?: string;
   fontSize?: number;
@@ -241,6 +245,38 @@ export function iconStyle(node: RenderNode): Record<string, string> {
   };
 }
 
+/**
+ * Adresse d'une image de la mediatheque dans le SVG produit.
+ *
+ * Elle depend de qui lit le SVG : le canvas la charge depuis l'API du worker,
+ * resvg et les exports autonomes ont besoin des octets en data URI.
+ */
+export type ImageHref = (image: string) => string;
+
+export interface RenderOptions {
+  /** Obligatoire des que la planche contient une image. */
+  imageHref?: ImageHref;
+}
+
+const IMAGE_ASPECT: Record<NonNullable<RenderNode["fit"]>, string> = {
+  cover: "xMidYMid slice",
+  contain: "xMidYMid meet",
+  fill: "none",
+};
+
+/** Valeur de `preserveAspectRatio` correspondant au `fit` du noeud. */
+export function imageAspect(node: RenderNode): string {
+  return IMAGE_ASPECT[node.fit ?? "cover"];
+}
+
+/** Adresse de l'image du noeud ; echoue si l'appelant n'a pas dit comment la resoudre. */
+export function imageSource(node: RenderNode, options: RenderOptions): string {
+  if (!options.imageHref) {
+    throw new Error(`Node "${node.id}" is an image, but this render was given no way to resolve image files.`);
+  }
+  return options.imageHref(node.image ?? "");
+}
+
 function attributesToSvg(attributes: Record<string, string>): string {
   return Object.entries(attributes)
     .map(([key, value]) => `${key}="${escapeXml(value)}"`)
@@ -256,7 +292,7 @@ export function iconElementToSvg([tag, attributes]: IconElement): string {
  * Un groupe ne produit rien par lui-meme : c'est un conteneur, rendu par
  * `documentToSvg` (serveur) ou par le canvas (navigateur).
  */
-export function nodeToSvg(node: RenderNode): string {
+export function nodeToSvg(node: RenderNode, options: RenderOptions = {}): string {
   // Un groupe est un conteneur ; une instance n'atteint jamais le rendu, elle
   // est remplacee par un groupe en amont par `expandInstances`.
   if (node.type === "group" || node.type === "instance") return "";
@@ -295,6 +331,13 @@ export function nodeToSvg(node: RenderNode): string {
       const placement = `${transform ? `${transform} ` : ""}translate(${round(place.x)} ${round(place.y)}) scale(${round(place.scale)})`;
       const body = iconElementsOf(node).map(iconElementToSvg).join("");
       return `<g transform="${placement}" ${attributesToSvg(iconStyle(node))}${opacityAttr}>${body}</g>`;
+    }
+    case "image": {
+      return (
+        `<image x="${round(box.x)}" y="${round(box.y)}" width="${round(box.width)}" height="${round(box.height)}"` +
+        ` href="${escapeXml(imageSource(node, options))}" preserveAspectRatio="${imageAspect(node)}"` +
+        `${opacityAttr}${transformAttr} />`
+      );
     }
     case "text": {
       const m = textMetrics(node);
@@ -337,13 +380,14 @@ function renderSiblings(
   children: Map<string | null, RenderNode[]>,
   layout: Layout,
   depth: number,
+  options: RenderOptions,
   frame?: Box
 ): string[] {
   const pad = "  ".repeat(depth + 1);
   return nodes.flatMap((node) => {
     const bounds = boundsOf(layout, node.id);
     if (frame && node.opacity < 1 && !boxesIntersect(bounds, frame)) return [];
-    if (node.type !== "group") return [`${pad}${nodeToSvg(node)}`];
+    if (node.type !== "group") return [`${pad}${nodeToSvg(node, options)}`];
 
     const origin = layout.origin.get(node.id) ?? { x: 0, y: 0 };
     const center = { cx: bounds.x + bounds.width / 2 - origin.x, cy: bounds.y + bounds.height / 2 - origin.y };
@@ -351,14 +395,14 @@ function renderSiblings(
 
     return [
       `${pad}<g transform="${groupTransform(node, center)}"${opacity}>`,
-      ...renderSiblings(children.get(node.id) ?? [], children, layout, depth + 1, frame),
+      ...renderSiblings(children.get(node.id) ?? [], children, layout, depth + 1, options, frame),
       `${pad}</g>`,
     ];
   });
 }
 
 /** Contenu SVG de la planche, en coordonnées document, limité à `frame` s'il est donné. */
-function documentBody(doc: RenderDocument, frame?: Box): string {
+function documentBody(doc: RenderDocument, options: RenderOptions, frame?: Box): string {
   // Les instances sont resolues ici, une fois pour toutes : en dessous, il n'y
   // a plus que des groupes ordinaires.
   const nodes = expandInstances(doc.nodes);
@@ -367,11 +411,11 @@ function documentBody(doc: RenderDocument, frame?: Box): string {
 
   // Un groupe devient un <g> : ses enfants gardent leurs coordonnées locales,
   // c'est la transformation du conteneur qui les place.
-  return renderSiblings(children.get(null) ?? [], children, layout, 0, frame).join("\n");
+  return renderSiblings(children.get(null) ?? [], children, layout, 0, options, frame).join("\n");
 }
 
-export function documentToSvg(doc: RenderDocument): string {
-  const body = documentBody(doc);
+export function documentToSvg(doc: RenderDocument, options: RenderOptions = {}): string {
+  const body = documentBody(doc, options);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${doc.width}" height="${doc.height}" ` +
     `viewBox="0 0 ${doc.width} ${doc.height}">\n` +
@@ -386,8 +430,8 @@ export function documentToSvg(doc: RenderDocument): string {
  * Tout ce qui recoupe la zone y figure, coupé à ses bords ; les éléments
  * semi-transparents qui ne la recoupent pas sont omis.
  */
-export function regionToSvg(doc: RenderDocument, region: Box): string {
-  const body = documentBody(doc, region);
+export function regionToSvg(doc: RenderDocument, region: Box, options: RenderOptions = {}): string {
+  const body = documentBody(doc, options, region);
   const width = round(Math.max(1, region.width));
   const height = round(Math.max(1, region.height));
   return (
@@ -407,7 +451,7 @@ export function regionToSvg(doc: RenderDocument, region: Box): string {
  * position document : le viewBox peut alors être exprimé dans le même repère
  * que `computeLayout`, donc directement sur la boîte englobante de l'élément.
  */
-export function subtreeToSvg(doc: RenderDocument, nodeId: string, padding = 0): string {
+export function subtreeToSvg(doc: RenderDocument, nodeId: string, padding = 0, options: RenderOptions = {}): string {
   const nodes = expandInstances(doc.nodes);
   const node = nodes.find((candidate) => candidate.id === nodeId);
   if (!node) throw new Error(`Node "${nodeId}" not found in design "${doc.name}".`);
@@ -431,8 +475,8 @@ export function subtreeToSvg(doc: RenderDocument, nodeId: string, padding = 0): 
     node.type === "group" ? (layout.origin.get(nodeId) ?? { x: 0, y: 0 }) : spaceOriginOf(layout, node.parentId);
   const inner =
     node.type === "group"
-      ? renderSiblings([{ ...node, x: 0, y: 0 }], children, layout, 1).join("\n")
-      : `    ${nodeToSvg(node)}`;
+      ? renderSiblings([{ ...node, x: 0, y: 0 }], children, layout, 1, options).join("\n")
+      : `    ${nodeToSvg(node, options)}`;
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${round(region.width)}" height="${round(region.height)}" ` +

@@ -6,6 +6,7 @@ import { useRemarkStore, type Composer } from '../store/useRemarkStore'
 import type { Design, DesignNode } from '../types'
 import { remarkBox } from '../utils/remarks'
 import { Icon } from './Icon'
+import { api } from '../utils/api'
 
 /** Remarques du design affichées sur la planche, selon le choix « transmises ». */
 function useVisibleRemarks(designId: string): Remark[] {
@@ -212,11 +213,12 @@ function RemarkComposer({
     }
   })
 
-  const preview = useMemo(() => {
-    if (!areaBox) return null
-    const svg = regionToSvg(design, areaBox)
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-  }, [areaBox, design])
+  // SVG inséré dans la page, pas chargé par une balise <img> : un SVG servi
+  // comme image ne charge aucune ressource externe, donc aucune image du design.
+  const preview = useMemo(
+    () => (areaBox ? regionToSvg(design, areaBox, { imageHref: api.imageUrl }) : null),
+    [areaBox, design]
+  )
 
   const canSave = composer.text.trim() !== '' && !saving
 
@@ -252,7 +254,12 @@ function RemarkComposer({
         </div>
       ) : (
         <div className="remark-composer-section">
-          <img className="remark-preview" src={preview!} alt="Aperçu de la zone" />
+          <div
+            className="remark-preview"
+            role="img"
+            aria-label="Aperçu de la zone"
+            dangerouslySetInnerHTML={{ __html: preview! }}
+          />
           <p className="remark-hint">
             x {Math.round(composer.box.x)}, y {Math.round(composer.box.y)} · {Math.round(composer.box.width)} ×{' '}
             {Math.round(composer.box.height)} px

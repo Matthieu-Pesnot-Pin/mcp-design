@@ -6,6 +6,7 @@ import {
   iconElementToSvg,
   iconElementsOf,
   iconStyle,
+  imageSource,
   normalizedBox,
   textLines,
   textMetrics,
@@ -14,6 +15,7 @@ import {
 import { ICON_GRID } from "../../shared/icons/index.js";
 import { boundsOf, childrenByParent, computeLayout, type Box, type Layout } from "../../shared/tree.js";
 import { expandInstances } from "../../shared/instances.js";
+import type { ImageStore } from "./image-store.js";
 
 export const EXPORT_FORMATS = ["svg", "html", "jsx", "json", "summary"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -182,7 +184,21 @@ function contextOf(design: Design): WalkContext {
   return { layout: computeLayout(nodes as unknown as RenderNode[]), children: childrenByParent(nodes) };
 }
 
-function toHtml(design: Design): string {
+/**
+ * Résolution des images en data URI : un export se suffit à lui-même, il
+ * s'ouvre tel quel sans la médiathèque du serveur.
+ */
+function renderOptions(images: ImageStore | undefined) {
+  return images ? { imageHref: (name: string) => images.dataUri(name) } : {};
+}
+
+/** Source et cadrage d'une image pour les exports HTML et JSX. */
+function imageTag(node: DesignNode, images: ImageStore | undefined): { src: string; fit: string } {
+  const render = node as unknown as RenderNode;
+  return { src: imageSource(render, renderOptions(images)), fit: render.fit ?? "cover" };
+}
+
+function toHtml(design: Design, images: ImageStore | undefined): string {
   const { layout, children } = contextOf(design);
   const rules: string[] = [];
 
@@ -201,6 +217,12 @@ function toHtml(design: Design): string {
       }
       if (node.type === "text") return [`${pad}<div class="${cls}">${escapeXml(node.text ?? "")}</div>`];
       if (node.type === "icon") return [`${pad}<div class="${cls}">${iconSvg(node, identity)}</div>`];
+      if (node.type === "image") {
+        const image = imageTag(node, images);
+        return [
+          `${pad}<img class="${cls}" src="${escapeXml(image.src)}" alt="${escapeXml(node.name)}" style="object-fit: ${image.fit}" />`,
+        ];
+      }
       return [`${pad}<div class="${cls}"></div>`];
     });
   };
@@ -245,7 +267,7 @@ function toComponentName(name: string): string {
   return /^[A-Za-z]/.test(pascal) ? pascal : "Design";
 }
 
-function toJsx(design: Design): string {
+function toJsx(design: Design, images: ImageStore | undefined): string {
   const { layout, children } = contextOf(design);
 
   const styleOf = (node: DesignNode, parentBox: Box | null): string =>
@@ -277,6 +299,13 @@ function toJsx(design: Design): string {
       }
       if (node.type === "icon") {
         return [comment, `${pad}<div style={{ ${style} }}>${iconSvg(node, toCamelCase)}</div>`];
+      }
+      if (node.type === "image") {
+        const image = imageTag(node, images);
+        return [
+          comment,
+          `${pad}<img src=${JSON.stringify(image.src)} alt=${JSON.stringify(node.name)} style={{ ${style}, objectFit: ${JSON.stringify(image.fit)} }} />`,
+        ];
       }
       return [comment, `${pad}<div style={{ ${style} }} />`];
     });
@@ -339,6 +368,8 @@ export function toSummary(design: Design): string {
           `${indent}- ${node.id} icon "${node.name}" @ ${geometry} — ${node.icon ?? "?"}, ` +
             `stroke ${node.stroke ?? "none"} ${node.strokeWidth ?? 2}/24${node.fill && node.fill !== "none" ? `, fill ${node.fill}` : ""}`
         );
+      } else if (node.type === "image") {
+        lines.push(`${indent}- ${node.id} image "${node.name}" @ ${geometry} — ${node.image ?? "?"}, fit ${node.fit ?? "cover"}`);
       } else if (node.type === "line") {
         lines.push(
           `${indent}- ${node.id} line "${node.name}" @ ${geometry} — ${node.strokeWidth}px ${node.stroke}`
@@ -356,7 +387,7 @@ export function toSummary(design: Design): string {
   return lines.join("\n");
 }
 
-export function exportDesign(design: Design, format: ExportFormat): string {
+export function exportDesign(design: Design, format: ExportFormat, images?: ImageStore): string {
   switch (format) {
     case "svg":
       // `documentToSvg` resout les instances lui-meme : le canvas de la GUI
@@ -367,11 +398,11 @@ export function exportDesign(design: Design, format: ExportFormat): string {
         height: design.height,
         background: design.background,
         nodes: toRenderNodes(design),
-      });
+      }, renderOptions(images));
     case "html":
-      return toHtml(design);
+      return toHtml(design, images);
     case "jsx":
-      return toJsx(design);
+      return toJsx(design, images);
     case "json":
       return JSON.stringify(
         {

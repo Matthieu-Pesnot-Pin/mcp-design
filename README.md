@@ -93,7 +93,7 @@ Chaque requête traverse la garde de [`@imenam/mcp-gui-interface`](https://www.n
 - à tout en-tête `Host` autre que `localhost`, `127.0.0.1` ou `::1` (protection contre le DNS rebinding) ;
 - aux modifications (méthodes autres que `GET`, `HEAD`, `OPTIONS`) venues d'un autre site, d'après `Sec-Fetch-Site` ou, à défaut, `Origin` (sont admis : la machine elle-même, le proxy de `PROXY_URL`).
 
-Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible, diffable, versionnable.
+Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible, diffable, versionnable. Les images qu'il affiche sont dans `<data>/images/`.
 
 ---
 
@@ -115,6 +115,7 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 | Outil | Effet |
 |---|---|
 | `add_nodes` | Ajoute un ou plusieurs éléments par-dessus les autres. |
+| `add_image` | Importe une image (chemin absolu d'un fichier PNG, JPEG, GIF, WebP ou SVG) et la pose par-dessus les autres éléments. |
 | `update_nodes` | Patche des éléments existants — seuls les champs fournis changent. |
 | `delete_nodes` | Supprime des éléments par identifiant. Supprimer un groupe emporte son contenu. |
 | `duplicate_nodes` | Copie des éléments ou des groupes avec tout leur contenu, sous de nouveaux identifiants. `offset_x`/`offset_y` et `count` disposent une série de copies, `parent_id` les dépose dans un groupe. Avec `target_design_id`, la copie va dans une **autre planche** : les éléments gardent leur position à l'écran, et les composants reproduits par les instances copiées sont copiés avec elles, une seule fois, à la racine. |
@@ -122,7 +123,7 @@ Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible
 | `ungroup_nodes` | Dissout des groupes : leur contenu remonte d'un niveau, toujours sans bouger. |
 | `detach_instances` | Rompt le lien d'une instance avec son composant : son contenu devient des éléments ordinaires. |
 
-Sept types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon`, `group` et `instance`. Seul `type` est obligatoire — sauf pour `icon`, qui a besoin du nom de l'icône ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
+Huit types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon`, `image`, `group` et `instance`. Seul `type` est obligatoire — sauf pour `icon`, qui a besoin du nom de l'icône, et `image`, qui a besoin du nom d'une image importée ; tout le reste tombe sur des valeurs par défaut visibles, donc `{ "type": "rect" }` suffit à créer quelque chose qu'on voit à l'écran.
 
 **Champs communs** — `name`, `parentId`, `x`, `y`, `width`, `height` (en pixels, origine en haut à gauche), `rotation` (degrés, autour du centre de la boîte), `opacity` (0–1).
 
@@ -135,6 +136,7 @@ Sept types d'éléments : `rect`, `ellipse`, `line`, `text`, `icon`, `group` et 
 | `line` | `stroke`, `strokeWidth` — le trait va de `(x, y)` à `(x + width, y + height)`, donc les deltas négatifs encodent la direction |
 | `text` | `text`, `color`, `fontSize`, `fontFamily`, `fontWeight`, `fontStyle`, `textAlign`, `lineHeight` (en px) |
 | `icon` | `icon` (obligatoire — le nom du dessin), `fill`, `stroke`, `strokeWidth` |
+| `image` | `image` (obligatoire — le nom de l'image dans la médiathèque), `fit` (`cover` par défaut, `contain`, `fill`) |
 | `group` | aucun — c'est un pur conteneur |
 | `instance` | `componentId` (obligatoire — le groupe reproduit) ; rien d'autre, son apparence vient de ce groupe |
 
@@ -163,6 +165,25 @@ Trois règles à connaître :
 Côté GUI, l'outil « Icône » de la barre d'outils (raccourci `I`) ouvre un sélecteur cherchable, et l'inspecteur permet de remplacer l'icône d'un élément existant. L'index de synonymes y est chargé à la demande, pour ne pas peser sur le premier affichage du canvas.
 
 La bibliothèque est figée dans le dépôt par `npm run generate-icons` ([`scripts/generate-icons.js`](scripts/generate-icons.js)) : ni le serveur publié ni le bundle de la GUI ne dépendent de Lucide à l'exécution, et la géométrie d'un design ne peut pas changer au gré d'un `npm install`.
+
+### Images
+
+`add_image` pose une vraie image — photo, logo, illustration, capture — là où une icône ou des formes ne suffisent pas.
+
+```json
+{ "design_id": "landing", "file_path": "C:/projets/site/assets/hero.jpg", "x": 0, "y": 80, "width": 1440 }
+```
+
+- **Le fichier est copié** dans `<MCP_DESIGN_DATA_DIR>/images/`, sous un nom tiré de l'empreinte de son contenu (`img_3f9a1c2b7d4e5f60.jpg`). Le design ne stocke que ce nom : le JSON reste lisible, une même image importée deux fois n'est stockée qu'une fois, et la planche ne dépend plus de l'emplacement du fichier d'origine. La médiathèque est commune à toutes les planches du dossier de données.
+- **Taille** : sans `width` ni `height`, la boîte prend les dimensions naturelles de l'image ; avec une seule des deux, l'autre suit ses proportions.
+- **`fit`** dit comment l'image remplit sa boîte : `cover` la remplit en rognant le débordement, `contain` la montre en entier, `fill` l'étire.
+- **Réutiliser une image** : la réponse d'`add_image` donne son nom ; un nœud `{ "type": "image", "image": "img_…" }` dans `add_nodes` la repose sans second import. Un nom absent de la médiathèque est refusé à l'écriture.
+- Le format est reconnu d'après le contenu du fichier, pas d'après son extension ; 20 Mo au plus.
+- Derrière [`@imenam/mcp-http-gateway`](https://www.npmjs.com/package/@imenam/mcp-http-gateway), l'outil déclare la paire `file_path` / `file_content` : le relais lit le fichier sur la machine de l'agent et en transmet le contenu (dossier autorisé par `GATEWAY_INLINE_ROOTS`).
+
+Le canvas charge les images depuis le worker (`GET /api/images/<nom>`). `screenshot_design`, les captures des remarques et `export_design` les intègrent en data URI : un export `svg`, `html` ou `jsx` s'ouvre tel quel, sans la médiathèque — mais il pèse le poids des images qu'il contient ; pour une planche illustrée, préférez `destination_path` à un retour en ligne.
+
+Dans la GUI, une image se déplace, se redimensionne et se pivote comme les autres éléments ; l'inspecteur règle son cadrage.
 
 ### Hiérarchie
 

@@ -14,6 +14,12 @@ const ALIGNMENTS: Array<{ value: 'left' | 'center' | 'right'; glyph: string; lab
   { value: 'right', glyph: '⇥', label: 'Aligner à droite' },
 ]
 
+const IMAGE_FITS: Array<{ value: 'cover' | 'contain' | 'fill'; label: string; title: string }> = [
+  { value: 'cover', label: 'Couvrir', title: 'Remplit la boîte, rogne le débordement' },
+  { value: 'contain', label: 'Contenir', title: "Montre toute l'image dans la boîte" },
+  { value: 'fill', label: 'Étirer', title: "Étire l'image aux dimensions de la boîte" },
+]
+
 /** Champ numérique : ne remonte la valeur que si elle est réellement exploitable. */
 function NumberField({
   label,
@@ -253,7 +259,26 @@ export function Inspector() {
         </>
       )}
 
-      {uniformType && uniformType !== 'line' && uniformType !== 'text' && uniformType !== 'icon' && uniformType !== 'group' && uniformType !== 'instance' && (
+      {uniformType === 'image' && (
+        <div className="field">
+          <span>Cadrage</span>
+          <div className="segmented">
+            {IMAGE_FITS.map((entry) => (
+              <button
+                key={entry.value}
+                type="button"
+                title={entry.title}
+                data-active={(first.fit ?? 'cover') === entry.value || undefined}
+                onClick={() => patch({ fit: entry.value })}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(uniformType === 'rect' || uniformType === 'ellipse') && (
         <>
           <ColorField label="Remplissage" value={first.fill} onChange={(fill) => patch({ fill })} />
           <ColorField label="Contour" value={first.stroke} onChange={(stroke) => patch({ stroke })} />

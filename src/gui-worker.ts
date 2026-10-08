@@ -408,6 +408,16 @@ app.get("/api/captures/:name", async (c) => {
   });
 });
 
+app.get("/api/images/:name", async (c) => {
+  const result = await ipcRequest("GET_IMAGE", { name: c.req.param("name") }, 10000);
+  if (result.error) return c.json({ error: result.error }, 404);
+  return c.body(Buffer.from(result.data.data, "base64"), 200, {
+    "Content-Type": result.data.mimeType,
+    // Le nom d'une image suit l'empreinte de son contenu : il ne désigne jamais deux fichiers différents.
+    "Cache-Control": "private, max-age=31536000, immutable",
+  });
+});
+
 // Fichiers statiques de la SPA
 app.use("/assets/*", serveStatic({ root: path.relative(process.cwd(), absoluteStaticRoot) }));
 

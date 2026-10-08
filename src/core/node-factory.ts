@@ -45,6 +45,21 @@ function requireIconName(value: unknown): string {
   );
 }
 
+/**
+ * Valide le champ `image` d'un noeud `image`. L'existence du fichier dans la
+ * mediatheque, elle, est verifiee par les outils, qui ont acces au stockage.
+ */
+function requireImageName(value: unknown): string {
+  const name = typeof value === "string" ? value.trim() : "";
+  if (name === "") {
+    throw new DesignError(
+      `An "image" node needs an "image" field naming a stored image, e.g. "img_3f9a1c2b7d4e5f60.png". ` +
+        `Call add_image to import a picture file: it stores the file and places the node in one step.`
+    );
+  }
+  return name;
+}
+
 /** Champs geometriques réellement modifiables pour un type donné. */
 function geometryFieldsFor(type: NodeType): ReadonlyArray<keyof DesignNode> {
   return SIZE_DERIVED_KINDS.includes(type) ? GEOMETRY.filter((field) => !DERIVED.includes(field)) : GEOMETRY;
@@ -123,6 +138,7 @@ export function buildNode(input: CreateNodeInput, existingIds: Set<string>, inde
   }
 
   if (type === "instance") draft.componentId = requireComponentId(draft.componentId);
+  if (type === "image") draft.image = requireImageName(draft.image);
   if (type === "icon") {
     draft.icon = requireIconName(draft.icon);
     // Un calque nomme "Icône 7" ne dit rien au relecteur ; le nom de l'icone,
@@ -178,6 +194,7 @@ export function applyPatch(node: DesignNode, patch: Record<string, unknown>): De
   }
 
   if (node.type === "icon" && patch.icon !== undefined) next.icon = requireIconName(patch.icon);
+  if (node.type === "image" && patch.image !== undefined) next.image = requireImageName(patch.image);
   // Changer le lien echange l'instance de composant, comme un "swap instance".
   if (node.type === "instance" && patch.componentId !== undefined) next.componentId = requireComponentId(patch.componentId);
 

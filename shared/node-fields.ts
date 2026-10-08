@@ -10,7 +10,7 @@ import type { RenderNode } from "./render.js";
  */
 export const NODE_FIELD_DOCS = {
   id: "Explicit id. Generated when omitted; must be unique within the design.",
-  type: "Kind of node: rect, ellipse, line, text, icon, group or instance.",
+  type: "Kind of node: rect, ellipse, line, text, icon, image, group or instance.",
   name: "Layer name shown in the GUI. Purely descriptive.",
   parentId:
     "Id of the containing group, or null for the root level of the artboard. " +
@@ -52,6 +52,13 @@ export const NODE_FIELD_DOCS = {
     "the result is sharp at any size, restyles in one field, and stays readable to whoever reads the design later. " +
     "Call search_icons to find a name from a description (it also understands synonyms, so \"basket\" finds \"shopping-cart\"). " +
     "The node's box is square: the drawing is scaled uniformly to fit it and centred, never stretched.",
+
+  image:
+    "Image nodes only: name of the stored image file, e.g. \"img_3f9a1c2b7d4e.png\". It is returned by add_image, which is the way " +
+    "to bring a new picture into the design; reuse the same name to place that picture again without importing it twice.",
+  fit:
+    "Image nodes only: how the picture fills its box. cover (default) fills the whole box and crops the overflow, " +
+    "contain shows the whole picture inside the box, leaving empty bands, fill stretches it to the box.",
 
   componentId:
     "Instance nodes only: id of the GROUP this instance mirrors. The group's content is NOT copied — it is resolved " +

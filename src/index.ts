@@ -18,7 +18,7 @@ import { MIN_LINE_HEIGHT_PX } from "../shared/render.js";
 import { CORE_ICONS, iconCount } from "../shared/icons/index.js";
 import { NODE_FIELD_DOCS } from "../shared/node-fields.js";
 import { REORDER_DIRECTIONS } from "../shared/tree.js";
-import { normalizeDesignGroup } from "../shared/schemas/design.schema.js";
+import { IMAGE_FITS, NODE_TYPES, normalizeDesignGroup } from "../shared/schemas/design.schema.js";
 import { listDesigns } from "./tools/list-designs.js";
 import { createDesign } from "./tools/create-design.js";
 import { duplicateDesign } from "./tools/duplicate-design.js";
@@ -26,6 +26,8 @@ import { getDesign } from "./tools/get-design.js";
 import { updateDesign } from "./tools/update-design.js";
 import { deleteDesign } from "./tools/delete-design.js";
 import { addNodes } from "./tools/add-nodes.js";
+import { addImage } from "./tools/add-image.js";
+import { IMAGE_FORMATS } from "./core/image-store.js";
 import { updateNodes } from "./tools/update-nodes.js";
 import { deleteNodes } from "./tools/delete-nodes.js";
 import { duplicateNodes, MAX_DUPLICATE_COPIES } from "./tools/duplicate-nodes.js";
@@ -325,6 +327,15 @@ function handleIPCMessage(msg: any) {
       }
       return;
 
+    case "GET_IMAGE":
+      try {
+        const image = store.images.read(String(msg.data?.name ?? ""));
+        reply(msg, "GET_IMAGE_RESPONSE", { data: image.data.toString("base64"), mimeType: image.mimeType });
+      } catch (err: any) {
+        replyError(msg, "GET_IMAGE_RESPONSE", err.message);
+      }
+      return;
+
     case "GET_CONFIG":
       reply(msg, "GET_CONFIG_RESPONSE", { dataDir: store.getDataDir(), version: APP_VERSION });
       return;
@@ -499,6 +510,7 @@ const NODE_FIELDS_DOC =
   "a text node given no height takes the exact height of its text, so its first line starts at y — " +
   "pass a height only to centre a label inside a container (same y and height as the container); " +
   "icon: icon (required — the name of the drawing), fill, stroke, strokeWidth; " +
+  "image: image (required — the stored name returned by add_image), fit; " +
   "instance: componentId (required — the id of the group it mirrors); nothing else, its look comes from that group. " +
   "Any field left out falls back to a sensible default, so a node can be created from its type alone.";
 
@@ -536,6 +548,8 @@ const NODE_PROPERTIES = {
   strokeWidth: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.strokeWidth },
   radius: { type: "number", minimum: 0, description: NODE_FIELD_DOCS.radius },
   icon: { type: "string", description: NODE_FIELD_DOCS.icon },
+  image: { type: "string", description: NODE_FIELD_DOCS.image },
+  fit: { type: "string", enum: [...IMAGE_FITS], description: NODE_FIELD_DOCS.fit },
   componentId: { type: "string", description: NODE_FIELD_DOCS.componentId },
   text: { type: "string", description: NODE_FIELD_DOCS.text },
   color: { type: "string", description: NODE_FIELD_DOCS.color },
@@ -684,7 +698,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               properties: {
                 type: {
                   type: "string",
-                  enum: ["rect", "ellipse", "line", "text", "icon", "group", "instance"],
+                  enum: [...NODE_TYPES],
                   description: NODE_FIELD_DOCS.type,
                 },
                 ...NODE_PROPERTIES,
@@ -695,6 +709,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ["design_id", "nodes"],
+      },
+    },
+    {
+      name: "add_image",
+      description:
+        "Place a picture (photo, logo, illustration, screenshot) on a design, on top of the other nodes. " +
+        `Give the ABSOLUTE path of the image file on the agent machine; accepted formats: ${Object.keys(IMAGE_FORMATS).join(", ")}. ` +
+        "The file is copied into the media library of the designs, so the design keeps working if the original moves. " +
+        "Without width and height the node takes the picture's natural size; with only one of them, the other follows the picture's proportions. " +
+        "Use it for real pictures only — icons come from the \"icon\" node, shapes from add_nodes. " +
+        "The answer gives the stored name of the picture: an image node in add_nodes with that name places it again without a second import.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          design_id: { type: "string", description: DESIGN_ID_DOC },
+          file_path: { type: "string", description: "Absolute path to the image file on the agent machine." },
+          file_content: {
+            type: "string",
+            description: "Filled in by the mcp-http-gateway relay, never by the agent: the base64 content of the file read on the agent machine.",
+          },
+          file_name: {
+            type: "string",
+            description: "Filled in by the mcp-http-gateway relay, never by the agent: the original name of the file read on the agent machine.",
+          },
+          id: NODE_PROPERTIES.id,
+          name: { type: "string", description: `${NODE_FIELD_DOCS.name} Defaults to the file name without its extension.` },
+          parentId: NODE_PROPERTIES.parentId,
+          x: NODE_PROPERTIES.x,
+          y: NODE_PROPERTIES.y,
+          width: { type: "number", description: "Width of the box, in pixels. Defaults to the picture's natural width, or follows its proportions when only height is given." },
+          height: { type: "number", description: "Height of the box, in pixels. Defaults to the picture's natural height, or follows its proportions when only width is given." },
+          rotation: NODE_PROPERTIES.rotation,
+          opacity: NODE_PROPERTIES.opacity,
+          fit: NODE_PROPERTIES.fit,
+        },
+        required: ["design_id", "file_path"],
       },
     },
     {
@@ -1078,6 +1128,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
 
       case "add_nodes": {
         const result = addNodes(store, params);
+        notifyDesignChanged(result.design!.id);
+        return { ...result, content: [{ type: "text", text: result.content[0].text + guiHint(result.design!.id) }] };
+      }
+
+      case "add_image": {
+        const result = addImage(store, params);
         notifyDesignChanged(result.design!.id);
         return { ...result, content: [{ type: "text", text: result.content[0].text + guiHint(result.design!.id) }] };
       }
