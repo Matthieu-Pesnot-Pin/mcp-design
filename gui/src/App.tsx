@@ -33,7 +33,7 @@ export default function App() {
   const roundsOpen = useRemarkStore((state) => state.roundsOpen)
   const composing = useRemarkStore((state) => state.composer !== null)
 
-  const [leftWidth, setLeftWidth, commitLeftWidth] = usePanelWidth('mcp-design.sidebar-width', 232)
+  const [leftWidth, setLeftWidth, commitLeftWidth] = usePanelWidth('mcp-design.sidebar-width', 280)
   const [rightWidth, setRightWidth, commitRightWidth] = usePanelWidth('mcp-design.rail-width', 268)
   const [leftVisible, toggleLeft] = usePanelVisible('mcp-design.sidebar-visible')
   const [rightVisible, toggleRight] = usePanelVisible('mcp-design.rail-visible')

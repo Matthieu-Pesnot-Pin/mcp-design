@@ -302,6 +302,18 @@ app.put("/api/designs/:id/group", async (c) => {
   return c.json(result.data);
 });
 
+app.post("/api/designs/:id/duplicate", async (c) => {
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const result = await ipcRequest("DUPLICATE_DESIGN", { id: c.req.param("id"), name: body?.name }, 10000);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result.data);
+});
+
 app.delete("/api/designs/:id", async (c) => {
   const result = await ipcRequest("DELETE_DESIGN", { id: c.req.param("id") }, 10000);
   if (result.error) return c.json({ error: result.error }, 404);

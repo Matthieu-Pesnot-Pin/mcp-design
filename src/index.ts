@@ -213,6 +213,16 @@ function handleIPCMessage(msg: any) {
       }
       return;
 
+    case "DUPLICATE_DESIGN":
+      try {
+        const name = typeof msg.data?.name === "string" ? msg.data.name : undefined;
+        const design = store.duplicate(String(msg.data?.id), { name });
+        reply(msg, "DUPLICATE_DESIGN_RESPONSE", { design, designs: store.list() });
+      } catch (err: any) {
+        replyError(msg, "DUPLICATE_DESIGN_RESPONSE", err.message);
+      }
+      return;
+
     case "SET_DESIGN_GROUP":
       try {
         store.mutate(String(msg.data?.id), "user", (draft) => {

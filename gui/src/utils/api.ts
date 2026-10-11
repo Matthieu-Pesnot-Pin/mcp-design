@@ -63,6 +63,13 @@ export const api = {
       body: JSON.stringify({ group }),
     }),
 
+  /** Copie complète d'une page, rangée dans le même groupe. */
+  duplicateDesign: (id: string, name: string) =>
+    request<{ design: Design; designs: DesignSummary[] }>(`designs/${encodeURIComponent(id)}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
   deleteDesign: (id: string) =>
     request<{ designs: DesignSummary[] }>(`designs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 

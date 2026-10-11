@@ -303,6 +303,24 @@ test("a design created from the GUI is visible to the agent", async (t) => {
   assert.doesNotMatch(await client!.callTool("list_designs"), /depuis-la-gui/);
 });
 
+test("a page duplicated from the GUI is visible to the agent", async (t) => {
+  if (skipUnlessAvailable(t)) return;
+
+  const response = await fetch(`${guiUrl}/api/designs/e2e-board/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Copie GUI" }),
+  });
+  assert.equal(response.status, 200);
+  const { design } = await response.json();
+  assert.equal(design.id, "copie-gui");
+
+  assert.match(await client!.callTool("list_designs"), /copie-gui — "Copie GUI"/);
+
+  const deleted = await fetch(`${guiUrl}/api/designs/copie-gui`, { method: "DELETE" });
+  assert.equal(deleted.status, 200);
+});
+
 test("grouping survives the round trip through the GUI API", async (t) => {
   if (skipUnlessAvailable(t)) return;
 

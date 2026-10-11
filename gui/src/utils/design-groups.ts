@@ -66,6 +66,65 @@ export function firstDesignOf(branch: GroupBranch): DesignSummary | null {
   return null
 }
 
+/** Branche d'un chemin de groupe, ou null si aucun groupe ne porte ce chemin. */
+export function findBranch(root: GroupBranch, path: string): GroupBranch | null {
+  if (root.path === path) return root
+  for (const child of root.children) {
+    if (path === child.path || path.startsWith(`${child.path}${GROUP_SEPARATOR}`)) return findBranch(child, path)
+  }
+  return null
+}
+
+/**
+ * Copie de l'arbre réduite aux pages qui passent le filtre. Un groupe sans
+ * page retenue, sous-groupes compris, disparaît ; les compteurs suivent.
+ */
+export function filterTree(branch: GroupBranch, keep: (design: DesignSummary) => boolean): GroupBranch {
+  const children = branch.children.map((child) => filterTree(child, keep)).filter((child) => child.total > 0)
+  const designs = branch.designs.filter(keep)
+  return {
+    ...branch,
+    children,
+    designs,
+    total: designs.length + children.reduce((sum, child) => sum + child.total, 0),
+  }
+}
+
+/**
+ * Copie de l'arbre réduite à ce qui correspond à une recherche. Un groupe dont
+ * le nom correspond est gardé en entier ; sinon, seuls ses sous-groupes et ses
+ * pages qui correspondent restent.
+ */
+export function searchTree(branch: GroupBranch, matches: (text: string) => boolean): GroupBranch {
+  const children = branch.children
+    .map((child) => (matches(child.name) ? child : searchTree(child, matches)))
+    .filter((child) => child.total > 0)
+  const designs = branch.designs.filter((design) => matches(design.name))
+  return {
+    ...branch,
+    children,
+    designs,
+    total: designs.length + children.reduce((sum, child) => sum + child.total, 0),
+  }
+}
+
+/** Chemins de tous les groupes contenus dans une branche, à toute profondeur. */
+export function branchPaths(branch: GroupBranch): string[] {
+  return branch.children.flatMap((child) => [child.path, ...branchPaths(child)])
+}
+
+/** Toutes les pages d'une branche, sous-groupes compris. */
+export function designsOf(branch: GroupBranch): DesignSummary[] {
+  return [...branch.designs, ...branch.children.flatMap(designsOf)]
+}
+
+/** Deux lettres pour l'avatar d'un groupe : initiales des deux premiers mots, ou deux premières lettres. */
+export function groupInitials(name: string): string {
+  const words = name.split(/[\s_-]+/).filter((word) => /[\p{L}\p{N}]/u.test(word))
+  const letters = words.length >= 2 ? words[0][0] + words[1][0] : (words[0] ?? '?').slice(0, 2)
+  return letters.toUpperCase()
+}
+
 /** Tous les chemins de groupe existants, pour l'autocomplétion à la création. */
 export function groupPaths(designs: DesignSummary[]): string[] {
   const paths = new Set<string>()

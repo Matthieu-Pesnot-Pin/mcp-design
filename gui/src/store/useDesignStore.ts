@@ -96,6 +96,8 @@ interface DesignState {
   openDesign: (id: string) => Promise<void>
   createDesign: (input: { name: string; width?: number; height?: number; group?: string | null }) => Promise<string | null>
   removeDesign: (id: string) => Promise<void>
+  /** Copie une page puis ouvre la copie. */
+  duplicateDesign: (id: string, name: string) => Promise<void>
   /** Range une page dans un groupe de pages (chemin "Parent/Enfant"), ou l'en sort avec null. */
   setDesignGroup: (id: string, group: string | null) => Promise<void>
   /** Recharge depuis le serveur après une modification faite par l'agent. */
@@ -312,6 +314,27 @@ export const useDesignStore = create<DesignState>((set, get) => {
           // prochaine sauvegarde repartirait d'un classement perime.
           design: state.design?.id === id ? { ...state.design, group } : state.design,
         }))
+      } catch (err) {
+        set({ error: (err as Error).message })
+      }
+    },
+
+    duplicateDesign: async (id, name) => {
+      try {
+        // La copie part du fichier sur disque : une édition encore en attente
+        // de sauvegarde doit y être avant.
+        await get().flushSave()
+        const result = await api.duplicateDesign(id, name)
+        rememberDesign(result.design.id)
+        set({
+          designs: result.designs,
+          design: result.design,
+          selectedIds: [],
+          editingTextId: null,
+          expandedIds: result.design.nodes.filter((node) => node.type === 'group').map((node) => node.id),
+          past: [],
+          future: [],
+        })
       } catch (err) {
         set({ error: (err as Error).message })
       }

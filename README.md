@@ -313,7 +313,12 @@ mark_feedback_processed { round: 1, remark_ids: ["rm_…"], note: "…" }   ← 
 
 Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 
-- **Pages** — groupes et pages sont classés par ordre alphabétique, à chaque niveau. À l'ouverture, l'interface rouvre la dernière page consultée dans ce navigateur (mémorisée localement, propre à chaque poste) ; à défaut, la première page de la liste.
+- **Pages** — la barre de gauche présente l'arbre des groupes : chevron, dossier ouvert ou fermé et nombre de pages par groupe, avec un trait vertical qui relie chaque niveau à son parent. À chaque niveau, les sous-groupes viennent d'abord, puis les pages, chacun par ordre alphabétique ; les pages hors groupe sont regroupées en bas sous « Hors groupe ». À l'ouverture, l'interface rouvre la dernière page consultée dans ce navigateur (mémorisée localement, propre à chaque poste) ; à défaut, la première page de la liste.
+  - **Groupe affiché** — le sélecteur en tête montre « Tous les groupes » ou un seul groupe de premier niveau, avec son nombre de pages et de pages à synchroniser. Le choix est mémorisé dans le navigateur.
+  - **Recherche et filtres** — le champ de recherche porte sur les noms de pages et de dossiers, à toute profondeur, sans tenir compte des accents ni de la casse (`Échap` le vide) : un dossier dont le nom correspond reste affiché en entier, sinon seules ses pages et sous-dossiers qui correspondent restent. Les filtres « Toutes », « À synchroniser » et « Remarques » (remarques non transmises) portent leur compteur. Une recherche ou un filtre actif déplie tous les groupes.
+  - **Tout replier** — le bouton à droite de la recherche replie tous les dossiers du groupe affiché ; quand ils le sont déjà tous, il les déplie. Il est inactif pendant une recherche ou un filtre, qui gardent tout déplié.
+  - **Cartes de page** — un aperçu aux proportions de la planche, le nom, le format et la date de dernière modification ; à droite, la bulle violette des remarques non transmises et le point ambre des modifications à synchroniser. Le menu « … », visible au survol, propose **Déplacer vers…** (vide : hors groupe), **Dupliquer** (la copie s'ouvre aussitôt) et **Supprimer**. Une page se range aussi par glisser-déposer sur un groupe.
+  - **Nouvelle page** — le bouton en pied ouvre le formulaire de création ; le groupe est prérempli avec le groupe affiché.
 
 - **Outils** — sélection, rectangle, ellipse, ligne, texte, icône. Glisser pour dimensionner, cliquer pour poser à la taille par défaut. L'outil icône ouvre d'abord son sélecteur : poser une icône suppose d'avoir choisi laquelle.
 - **Édition** — déplacement au glisser, 8 poignées de redimensionnement (2 extrémités pour une ligne), sélection multiple au rectangle d'encadrement ou au Maj+clic.
@@ -332,7 +337,7 @@ Raccourcis : `V` `R` `O` `L` `T` `I` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rét
 
 La sauvegarde est automatique et différée. Une modification faite par l'agent pendant que la GUI est ouverte y apparaît en direct, via SSE ; une modification faite dans la GUI est enregistrée comme venant de l'utilisateur, et c'est ce que `get_changes` restitue.
 
-Le badge « n à synchroniser » d'une planche indique le nombre de modifications que l'agent n'a pas encore acquittées.
+Le point ambre d'une page indique qu'elle porte des modifications que l'agent n'a pas encore acquittées avec `mark_synced` ; leur nombre s'affiche au survol.
 
 ### Mode Remarques
 
