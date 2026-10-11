@@ -31,6 +31,28 @@ interface Snapshot {
 const HISTORY_LIMIT = 100
 const SAVE_DEBOUNCE_MS = 400
 
+/**
+ * Dernière page ouverte dans ce navigateur. Préférence locale : chaque poste
+ * rouvre sa propre page, indépendamment des autres utilisateurs et de l'agent.
+ */
+const LAST_DESIGN_KEY = 'mcp-design.last-design'
+
+export function readLastDesignId(): string | null {
+  try {
+    return localStorage.getItem(LAST_DESIGN_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberDesign(id: string) {
+  try {
+    localStorage.setItem(LAST_DESIGN_KEY, id)
+  } catch {
+    // Stockage indisponible (navigation privée) : la page s'ouvre sans être retenue.
+  }
+}
+
 interface DesignState {
   connected: boolean
   designs: DesignSummary[]
@@ -246,6 +268,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
       set({ loading: true, error: null })
       try {
         const design = await api.getDesign(id)
+        rememberDesign(id)
         set({
           design,
           loading: false,
@@ -263,6 +286,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
     createDesign: async (input) => {
       try {
         const result = await api.createDesign(input)
+        rememberDesign(result.design.id)
         set({
           designs: result.designs,
           design: result.design,

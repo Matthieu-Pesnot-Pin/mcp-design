@@ -42,12 +42,28 @@ export function buildGroupTree(designs: DesignSummary[]): GroupBranch {
   }
 
   const countUp = (branch: GroupBranch): number => {
-    branch.children.sort((a, b) => a.name.localeCompare(b.name))
+    branch.children.sort((a, b) => compareNames(a.name, b.name))
+    branch.designs.sort((a, b) => compareNames(a.name, b.name))
     branch.total = branch.designs.length + branch.children.reduce((sum, child) => sum + countUp(child), 0)
     return branch.total
   }
   countUp(root)
   return root
+}
+
+/** Ordre alphabétique, insensible à la casse et aux accents, « Page 2 » avant « Page 10 ». */
+function compareNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+}
+
+/** Première page dans l'ordre d'affichage de l'arbre : les pages d'un niveau, puis ses sous-groupes. */
+export function firstDesignOf(branch: GroupBranch): DesignSummary | null {
+  if (branch.designs.length > 0) return branch.designs[0]
+  for (const child of branch.children) {
+    const first = firstDesignOf(child)
+    if (first) return first
+  }
+  return null
 }
 
 /** Tous les chemins de groupe existants, pour l'autocomplétion à la création. */

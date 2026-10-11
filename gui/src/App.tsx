@@ -13,8 +13,9 @@ import { useIPC } from './hooks/useIPC'
 import { usePanelWidth } from './hooks/usePanelWidth'
 import { usePanelVisible } from './hooks/usePanelVisible'
 import { useKeyboard } from './hooks/useKeyboard'
-import { useDesignStore } from './store/useDesignStore'
+import { readLastDesignId, useDesignStore } from './store/useDesignStore'
 import { useRemarkStore } from './store/useRemarkStore'
+import { buildGroupTree, firstDesignOf } from './utils/design-groups'
 
 export default function App() {
   useIPC()
@@ -37,9 +38,13 @@ export default function App() {
   const [leftVisible, toggleLeft] = usePanelVisible('mcp-design.sidebar-visible')
   const [rightVisible, toggleRight] = usePanelVisible('mcp-design.rail-visible')
 
-  // Ouvre automatiquement le design le plus récent au premier chargement.
+  // Sans page ouverte : la dernière ouverte dans ce navigateur si elle existe
+  // encore, sinon la première de la barre latérale.
   useEffect(() => {
-    if (!design && designs.length > 0 && !loading) void openDesign(designs[0].id)
+    if (design || designs.length === 0 || loading) return
+    const lastId = readLastDesignId()
+    const target = designs.find((entry) => entry.id === lastId) ?? firstDesignOf(buildGroupTree(designs))
+    if (target) void openDesign(target.id)
   }, [design, designs, loading, openDesign])
 
   // Une fermeture d'onglet ne doit pas perdre la dernière modification en attente.

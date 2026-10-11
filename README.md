@@ -313,6 +313,8 @@ mark_feedback_processed { round: 1, remark_ids: ["rm_…"], note: "…" }   ← 
 
 Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 
+- **Pages** — groupes et pages sont classés par ordre alphabétique, à chaque niveau. À l'ouverture, l'interface rouvre la dernière page consultée dans ce navigateur (mémorisée localement, propre à chaque poste) ; à défaut, la première page de la liste.
+
 - **Outils** — sélection, rectangle, ellipse, ligne, texte, icône. Glisser pour dimensionner, cliquer pour poser à la taille par défaut. L'outil icône ouvre d'abord son sélecteur : poser une icône suppose d'avoir choisi laquelle.
 - **Édition** — déplacement au glisser, 8 poignées de redimensionnement (2 extrémités pour une ligne), sélection multiple au rectangle d'encadrement ou au Maj+clic.
 - **Groupes** — `Ctrl+G` groupe la sélection, `Ctrl+Maj+G` la dissout. Un clic dans le canvas sélectionne le **groupe le plus haut** ; `Alt+clic` vise l'élément exact à l'intérieur. Déplacer un groupe déplace tout son contenu.
