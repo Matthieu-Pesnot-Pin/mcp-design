@@ -23,7 +23,6 @@ export function Toolbar({
   const canUndo = useDesignStore((state) => state.past.length > 0)
   const canRedo = useDesignStore((state) => state.future.length > 0)
   const saveState = useDesignStore((state) => state.saveState)
-  const connected = useDesignStore((state) => state.connected)
   const design = useDesignStore((state) => state.design)
   const mode = useRemarkStore((state) => state.mode)
   const setMode = useRemarkStore((state) => state.setMode)
@@ -145,9 +144,6 @@ export function Toolbar({
         {design && <span className="status-name">{design.name}</span>}
         <span className="status-chip" data-state={saveState}>
           {saveLabel}
-        </span>
-        <span className="status-chip" data-state={connected ? 'saved' : 'error'}>
-          {connected ? 'Connecté' : 'Déconnecté'}
         </span>
       </div>
     </header>

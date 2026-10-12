@@ -54,7 +54,6 @@ function rememberDesign(id: string) {
 }
 
 interface DesignState {
-  connected: boolean
   designs: DesignSummary[]
   design: Design | null
   loading: boolean
@@ -77,7 +76,6 @@ interface DesignState {
   past: Snapshot[]
   future: Snapshot[]
 
-  setConnected: (connected: boolean) => void
   setError: (error: string | null) => void
   setTool: (tool: Tool) => void
   /** Choisit l'icône à poser et arme l'outil dans la foulée. */
@@ -205,7 +203,6 @@ export const useDesignStore = create<DesignState>((set, get) => {
   }
 
   return {
-    connected: false,
     designs: [],
     design: null,
     loading: false,
@@ -224,7 +221,6 @@ export const useDesignStore = create<DesignState>((set, get) => {
     past: [],
     future: [],
 
-    setConnected: (connected) => set({ connected }),
     setError: (error) => set({ error }),
     setTool: (tool) => set({ tool, editingTextId: null }),
     setPendingIcon: (pendingIcon) => set({ pendingIcon, tool: 'icon', editingTextId: null }),

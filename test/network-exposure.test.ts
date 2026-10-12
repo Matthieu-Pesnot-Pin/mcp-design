@@ -85,6 +85,18 @@ before(async () => {
   delete env.PROXY_URL;
   worker = fork(WORKER_ENTRY, [], { env, stdio: ["ignore", "ignore", "ignore", "ipc"] });
 
+  // Le test tient le rôle du master pour la seule requête IPC que la suite déclenche.
+  worker.on("message", (message: any) => {
+    if (message?.type === "SUBMIT_FEEDBACK") {
+      worker.send({
+        type: "SUBMIT_FEEDBACK_RESPONSE",
+        correlationId: message.correlationId,
+        data: { ok: true },
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("GUI worker did not report READY")), 15000);
     worker.on("message", (message: any) => {
@@ -105,7 +117,7 @@ after(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-const diagnostics = JSON.stringify({ source: "network-exposure-test" });
+const feedback = JSON.stringify({ remarkIds: [], title: "network-exposure-test" });
 
 test("un Host étranger est refusé", async () => {
   const response = await request({ method: "GET", path: "/proxy/health", headers: { Host: "attacker.example" } });
@@ -116,9 +128,9 @@ test("un Host étranger est refusé", async () => {
 test("une modification cross-site signalée par Sec-Fetch-Site est refusée", async () => {
   const response = await request({
     method: "POST",
-    path: "/api/client-diagnostics",
+    path: "/api/feedback",
     headers: { Host: `localhost:${port}`, "Sec-Fetch-Site": "cross-site", "Content-Type": "application/json" },
-    body: diagnostics,
+    body: feedback,
   });
   assert.equal(response.status, 403);
   assert.match(JSON.parse(response.body).error, /Cross-site request refused/);
@@ -127,9 +139,9 @@ test("une modification cross-site signalée par Sec-Fetch-Site est refusée", as
 test("une modification depuis une Origin étrangère est refusée", async () => {
   const response = await request({
     method: "POST",
-    path: "/api/client-diagnostics",
+    path: "/api/feedback",
     headers: { Host: `localhost:${port}`, Origin: "http://attacker.example", "Content-Type": "application/json" },
-    body: diagnostics,
+    body: feedback,
   });
   assert.equal(response.status, 403);
   assert.match(JSON.parse(response.body).error, /Cross-site request refused/);
@@ -138,14 +150,14 @@ test("une modification depuis une Origin étrangère est refusée", async () => 
 test("une modification relayée par le proxy est acceptée", async () => {
   const response = await request({
     method: "POST",
-    path: "/api/client-diagnostics",
+    path: "/api/feedback",
     headers: {
       Host: `localhost:${port}`,
       Origin: "http://localhost:3000",
       "Sec-Fetch-Site": "same-origin",
       "Content-Type": "application/json",
     },
-    body: diagnostics,
+    body: feedback,
   });
   assert.equal(response.status, 200);
   assert.deepEqual(JSON.parse(response.body), { ok: true });

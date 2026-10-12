@@ -335,7 +335,7 @@ Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 
 Raccourcis : `V` `R` `O` `L` `T` `I` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rétablir), `Ctrl+G` / `Ctrl+Maj+G` (grouper / dissoudre), `Ctrl+D` (dupliquer), `Ctrl+A` (tout sélectionner), `Suppr`, flèches (déplacer d'1 px, 10 px avec `Maj`), `Échap`.
 
-La sauvegarde est automatique et différée. Une modification faite par l'agent pendant que la GUI est ouverte y apparaît en direct, via SSE ; une modification faite dans la GUI est enregistrée comme venant de l'utilisateur, et c'est ce que `get_changes` restitue.
+La sauvegarde est automatique et différée. Une modification faite par l'agent pendant que la GUI est ouverte y apparaît dans les 3 secondes : la GUI interroge `GET /api/changes` toutes les 3 s ; une modification faite dans la GUI est enregistrée comme venant de l'utilisateur, et c'est ce que `get_changes` restitue.
 
 Le point ambre d'une page indique qu'elle porte des modifications que l'agent n'a pas encore acquittées avec `mark_synced` ; leur nombre s'affiche au survol.
 
@@ -366,9 +366,9 @@ Les retours créés avant l'arrivée des noms reçoivent « Retour n°N », et a
 Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-interface`) :
 
 - **MCP Master** (`src/index.ts`) — protocole JSON-RPC sur stdio, stockage des designs, cycle de vie du worker via `GuiLauncher`.
-- **GUI Worker** (`src/gui-worker.ts`) — serveur Hono, enregistrement auprès du proxy via `ProxyClient`, API REST + SSE, sert la SPA React.
+- **GUI Worker** (`src/gui-worker.ts`) — serveur Hono, enregistrement auprès du proxy via `ProxyClient`, API REST, sert la SPA React.
 
-Les deux communiquent par IPC. Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
+Les deux communiquent par IPC. Les évènements que le master pousse au worker (`DESIGNS_UPDATED`, `DESIGN_UPDATED`, `REMARKS_UPDATED`) entrent dans un journal en mémoire, numéroté et limité aux 200 dernières entrées. La GUI le relit toutes les 3 s par `GET /api/changes?since=<seq>&epoch=<epoch>`, qui répond immédiatement : aucune connexion ne reste ouverte, ce qui laisse libres les connexions que le navigateur accorde à l'origine du proxy, partagée par toutes les GUI. La réponse vaut `{ epoch, seq, reset: false, events }` avec les évènements postérieurs à `since`, ou `{ epoch, seq, reset: true }` quand la position du client n'est pas exploitable (premier appel, worker redémarré, entrées déjà sorties du journal) : la GUI recharge alors la liste des pages, les remarques et la page ouverte. Un `since` qui n'est pas un entier positif ou nul est refusé (400). Le worker se termine proprement quand le master disparaît (canal IPC fermé, PID parent absent) et quand une autre instance est déjà enregistrée (HTTP 409), ce qui évite les GUI orphelines.
 
 `shared/feedback.ts` porte le modèle des remarques, la détection des éléments d'une zone et la mise en forme d'un retour ; le serveur et la GUI l'importent tous deux, ce qui garantit que l'aperçu affiché est le texte transmis. `shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/instances.ts` l'expansion des instances en groupes, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
 

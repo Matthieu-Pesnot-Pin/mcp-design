@@ -9,16 +9,16 @@ import { FinishFeedbackDialog } from './components/FinishFeedbackDialog'
 import { RemarkPanel } from './components/RemarkPanel'
 import { Toolbar } from './components/Toolbar'
 import { ToolPalette } from './components/ToolPalette'
-import { useIPC } from './hooks/useIPC'
 import { usePanelWidth } from './hooks/usePanelWidth'
 import { usePanelVisible } from './hooks/usePanelVisible'
 import { useKeyboard } from './hooks/useKeyboard'
+import { useServerChanges } from './hooks/useServerChanges'
 import { readLastDesignId, useDesignStore } from './store/useDesignStore'
 import { useRemarkStore } from './store/useRemarkStore'
 import { buildGroupTree, firstDesignOf } from './utils/design-groups'
 
 export default function App() {
-  useIPC()
+  useServerChanges()
   useKeyboard()
 
   const design = useDesignStore((state) => state.design)

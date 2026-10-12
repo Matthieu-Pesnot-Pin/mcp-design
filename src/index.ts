@@ -161,14 +161,6 @@ function handleIPCMessage(msg: any) {
       guiStartWaiter?.({ outcome: "ready", url: msg.data?.url });
       return;
 
-    case "GET_INITIAL_STATE":
-      broadcastToGUI({
-        type: "INITIAL_STATE",
-        data: { designs: store.list(), version: APP_VERSION },
-        timestamp: new Date().toISOString(),
-      });
-      return;
-
     case "LIST_DESIGNS":
       reply(msg, "LIST_DESIGNS_RESPONSE", { designs: store.list() });
       return;
