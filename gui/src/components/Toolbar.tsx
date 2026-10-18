@@ -1,3 +1,4 @@
+import { useHost } from '../host'
 import { useDesignStore } from '../store/useDesignStore'
 import { roundProgress } from '@shared/feedback'
 import { draftsOf, useRemarkStore } from '../store/useRemarkStore'
@@ -16,6 +17,7 @@ export function Toolbar({
   onToggleLeft: () => void
   onToggleRight: () => void
 }) {
+  const host = useHost()
   const zoom = useDesignStore((state) => state.zoom)
   const setZoom = useDesignStore((state) => state.setZoom)
   const undo = useDesignStore((state) => state.undo)
@@ -139,6 +141,8 @@ export function Toolbar({
         Retours
         {openRounds > 0 && <span className="rounds-count">{openRounds}</span>}
       </button>
+
+      {host.toolbarActions}
 
       <div className="toolbar-status">
         {design && <span className="status-name">{design.name}</span>}

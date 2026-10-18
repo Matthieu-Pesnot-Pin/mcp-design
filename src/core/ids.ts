@@ -1,10 +1,8 @@
-import crypto from "crypto";
-
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 /** Identifiant court, lisible dans un JSON lu par un agent. */
 export function shortId(prefix: string, length = 8): string {
-  const bytes = crypto.randomBytes(length);
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(length));
   let out = "";
   for (const byte of bytes) out += ALPHABET[byte % ALPHABET.length];
   return `${prefix}_${out}`;

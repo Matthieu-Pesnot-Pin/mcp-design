@@ -1,0 +1,99 @@
+/* --- Version autonome : menu Projet, import d'une page, récap ------------- */
+
+.project-menu {
+  position: relative;
+}
+
+.project-menu .pending-dot[data-error] {
+  background: var(--danger);
+}
+
+.project-menu-list {
+  left: 0;
+  right: auto;
+  width: 260px;
+}
+
+.project-menu-status {
+  margin: 4px 10px 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+
+.import-text {
+  width: 100%;
+  min-height: 200px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.import-file {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.import-file input {
+  display: none;
+}
+
+.import-issues {
+  display: grid;
+  gap: 6px;
+}
+
+.import-issues .section-label {
+  color: var(--danger);
+}
+
+.import-issues .finish-preview {
+  max-height: 220px;
+}
+
+.import-plan {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eaf6ee;
+  font-size: 12.5px;
+}
+
+.import-plan > .ui-icon {
+  margin-top: 1px;
+  color: var(--ok);
+}
+
+.import-warning {
+  color: #8a5a00;
+}
+
+.recap-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.recap-actions .primary-button,
+.recap-actions .ghost-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+
+.recap-actions .remark-hint {
+  flex-basis: 100%;
+}

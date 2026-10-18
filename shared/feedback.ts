@@ -214,9 +214,13 @@ function indent(text: string, prefix: string): string {
  * La GUI l'affiche en aperçu avant l'enregistrement : c'est la même fonction,
  * donc le même texte. Chaque remarque porte son identifiant, que l'agent passe
  * à `mark_feedback_processed`. Les captures sont numérotées dans l'ordre des
- * remarques ; `get_feedback` joint les images dans cet ordre.
+ * remarques ; `get_feedback` joint les images dans cet ordre. `coordinatesSource`
+ * nomme ce qui, chez le lecteur, exprime les coordonnées dans le même repère.
  */
-export function formatFeedbackRound(round: Pick<FeedbackRound, "number" | "title" | "submittedAt" | "remarks">): string {
+export function formatFeedbackRound(
+  round: Pick<FeedbackRound, "number" | "title" | "submittedAt" | "remarks">,
+  coordinatesSource = "get_design"
+): string {
   const pages = new Map<string, RoundRemark[]>();
   for (const remark of round.remarks) {
     const list = pages.get(remark.designId);
@@ -228,7 +232,7 @@ export function formatFeedbackRound(round: Pick<FeedbackRound, "number" | "title
   const lines = [
     `Feedback round ${round.number} "${round.title}" — submitted ${round.submittedAt} — ` +
       `${round.remarks.length} remark(s) on ${pages.size} page(s), ${progress.done} processed.`,
-    "Coordinates are design pixels in the artboard's space, as in get_design.",
+    `Coordinates are design pixels in the artboard's space, as in ${coordinatesSource}.`,
   ];
 
   let image = 0;

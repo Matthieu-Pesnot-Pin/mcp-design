@@ -361,6 +361,51 @@ Les retours créés avant l'arrivée des noms reçoivent « Retour n°N », et a
 
 ---
 
+## Version autonome : un seul fichier HTML
+
+La même interface existe en un fichier HTML unique, à ouvrir directement dans le navigateur : ni serveur, ni agent MCP, ni connexion réseau. Les pages naissent d'un assistant conversationnel (ChatGPT ou autre) et s'échangent avec lui par fichiers JSON.
+
+```bash
+npm run build:standalone   # produit gui/dist-standalone/mcp-design.html
+```
+
+Le fichier embarque tout : le code, les 1 791 icônes, la police Inter (le canvas, les captures et le récap ont donc le même rendu sur toutes les machines).
+
+### Le circuit
+
+1. **Projet › Copier le prompt de création**, coller dans ChatGPT, puis décrire ce qu'on veut. Le prompt décrit le format d'une page, les types d'éléments et leurs champs, les règles de structure, les icônes et un exemple complet.
+2. ChatGPT renvoie **une page par réponse**, en JSON. **Projet › Importer une page** : coller la réponse (entière, ou seulement son bloc JSON) ou choisir un fichier `.json`. La page est vérifiée en entier avant tout changement ; à la moindre erreur, rien n'est importé et chaque problème est listé, dans un message que **Copier pour ChatGPT** permet de lui renvoyer tel quel. Une page dont l'`id` existe déjà la remplace ; la boîte de dialogue prévient alors des modifications faites à la main qui seraient perdues.
+3. Retoucher la page à la main, et poser des remarques comme dans la version serveur (mode Remarques, **Terminer les retours**).
+4. **Télécharger le récap** (à la fin de « Terminer les retours », ou dans la page « Retours ») : une archive `recap-retour-N.zip` qui réunit un fichier `recap-retour-N.md` et des images — une vue de chaque page concernée, remarques entourées et numérotées, et les captures des remarques. Le texte reprend les remarques, le JSON courant de chaque page et un rappel du format. **Copier le texte** le met dans le presse-papiers à la place du fichier.
+5. ChatGPT renvoie les pages corrigées, une par réponse, à importer comme à l'étape 2. Chacune liste dans `processed` les remarques traitées, avec une note : elles passent à *Traitée par l'agent* dans la page « Retours ».
+
+### Format d'une page
+
+```json
+{
+  "format": "mcp-design-page",
+  "version": 1,
+  "page": { "id": "home", "name": "Home", "group": null, "width": 1440, "height": 900, "background": "#ffffff", "nodes": [] },
+  "processed": [{ "remark": "rm_xxxxxxxx", "note": "Logo agrandi" }]
+}
+```
+
+Les éléments de `nodes` suivent le modèle des outils MCP (liste plate, `parentId`, coordonnées relatives au parent) et passent par la même validation que `add_nodes`. L'import est plus strict : un champ qui ne s'applique pas au type de l'élément est refusé, et les éléments `image` n'existent pas dans cette version (pas de médiathèque). La taille des groupes et des instances, dérivée de leur contenu, n'apparaît pas dans le JSON transmis et n'a pas à être fournie.
+
+### Données
+
+Le projet (pages, remarques, captures) vit dans le navigateur, qui en garde une copie (IndexedDB) relue à l'ouverture : recharger l'onglet ne perd rien. Cette copie dépend du navigateur et de son profil ; **le fichier exporté fait foi**. **Projet › Exporter le projet** télécharge `mcp-design-projet-AAAA-MM-JJ.json`, **Ouvrir un projet…** le recharge, après confirmation, à la place du projet courant. Le bouton **Projet** porte un point orange tant que des modifications n'ont pas été exportées, rouge si la copie du navigateur ne peut pas être lue ou écrite.
+
+Le filtre **À synchroniser** retient les pages modifiées à la main depuis le dernier échange avec ChatGPT : import de la page, ou récap qui la contient.
+
+### Ce qui diffère de la version serveur
+
+- Pas d'agent MCP : ni outils, ni `get_changes`, ni rafraîchissement périodique. L'assistant ne voit que ce qu'on lui transmet.
+- Pas d'images posées sur la planche.
+- Une seule personne, un seul navigateur : le projet circule par fichier.
+
+---
+
 ## Architecture
 
 Deux processus, conformément au standard de l'écosystème (`@imenam/mcp-gui-interface`) :
@@ -372,7 +417,11 @@ Les deux communiquent par IPC. Les évènements que le master pousse au worker (
 
 `shared/feedback.ts` porte le modèle des remarques, la détection des éléments d'une zone et la mise en forme d'un retour ; le serveur et la GUI l'importent tous deux, ce qui garantit que l'aperçu affiché est le texte transmis. `shared/render.ts` contient le rendu SVG d'un élément, `shared/tree.ts` la résolution de la hiérarchie en coordonnées document, `shared/instances.ts` l'expansion des instances en groupes, `shared/node-defaults.ts` les valeurs par défaut et `shared/icons/` la bibliothèque d'icônes. Tous sont importés **à la fois** par l'exporteur côté serveur et par le canvas côté navigateur : ce que l'utilisateur voit est exactement ce que `export_design` — et donc `screenshot_design`, qui rasterise ce même SVG via resvg — produit.
 
-Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle (y compris dans le graphe composant/instance), taille des groupes et des instances recalculée, ordre préfixe — sont appliqués dans `DesignStore.mutate`, donc sur **tout** chemin d'écriture : outil MCP comme sauvegarde depuis la GUI.
+Les invariants de hiérarchie — parent existant et de type `group`, absence de cycle (y compris dans le graphe composant/instance), taille des groupes et des instances recalculée, ordre préfixe — sont appliqués par `mutatedDesign` (`src/core/design-model.ts`), donc sur **tout** chemin d'écriture : outil MCP, sauvegarde depuis la GUI, import dans la version autonome.
+
+`src/core/design-model.ts` et `src/core/feedback-model.ts` portent les règles des pages et des remarques indépendamment de leur stockage : `DesignStore` et `FeedbackStore` les appliquent à des fichiers, la version autonome à son projet en mémoire. `src/core/exchange.ts` porte ce qui est propre à la version autonome et reste testable sans navigateur : prompt, lecture d'une page, récap, export du projet.
+
+La version autonome (`gui/vite.standalone.config.ts`) bâtit la même application React depuis `gui/mcp-design.html`, en substituant deux modules : `utils/api.ts` (appels HTTP au worker) par `standalone/api.ts` (projet en mémoire), et `hooks/useServerChanges.ts` par un simple chargement initial. Ce qui distingue les deux hôtes — textes qui nomment le destinataire des retours, menu **Projet**, actions du récap — passe par `gui/src/host.tsx`.
 
 **Limite assumée de cette version** : un groupe se déplace, se pivote et change d'opacité, mais ne se redimensionne pas — mettre son contenu à l'échelle demanderait de propager un facteur dans tout le sous-arbre, ce qui dépasse le cadre d'un premier jet sobre.
 
@@ -383,6 +432,7 @@ Les invariants de hiérarchie — parent existant et de type `group`, absence de
 ```bash
 npm install
 npm run build           # backend (tsc) + GUI (vite)
+npm run build:standalone  # version autonome : gui/dist-standalone/mcp-design.html
 npm test                # suite complète
 npm run generate-icons  # refige shared/icons/ après une mise à jour de lucide-static
 ```
@@ -391,6 +441,7 @@ La suite comprend :
 
 - des tests unitaires du store, de la fabrique d'éléments, du moteur de diff et de l'export ;
 - des tests des outils MCP appelés directement ;
+- des tests des échanges de la version autonome (`test/exchange.test.ts`) : l'exemple du prompt s'importe tel quel, une page exportée se réimporte à l'identique, chaque erreur est signalée sans rien importer, les remarques traitées sont vérifiées puis marquées ;
 - des tests d'exposition réseau (`test/network-exposure.test.ts`) qui lancent le worker GUI en mode `APP_PORT` et vérifient l'écoute sur `127.0.0.1` seul, le refus d'un `Host` étranger et des modifications cross-site, et l'acceptation des requêtes relayées par le proxy ;
 - une suite de bout en bout (`test/e2e.test.ts`) qui lance un vrai serveur MCP sur stdio, attend l'enregistrement de son worker auprès du proxy, puis vérifie l'aller-retour complet agent → GUI → agent.
 

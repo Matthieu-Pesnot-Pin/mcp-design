@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { defaultRoundTitle, formatFeedbackRound, orderRemarks, type RoundRemark } from '@shared/feedback'
+import { useHost } from '../host'
 import { useDesignStore } from '../store/useDesignStore'
 import { draftsOf, useRemarkStore } from '../store/useRemarkStore'
 import type { FeedbackRound, Remark } from '../types'
@@ -23,9 +24,10 @@ function whereLabel(remark: Remark, designName: string): string {
 
 /**
  * « Terminer les retours » : choisit les brouillons à transmettre et les fige
- * dans un retour numéroté, que l'agent lit avec `get_feedback`.
+ * dans un retour numéroté.
  */
 export function FinishFeedbackDialog() {
+  const host = useHost()
   const design = useDesignStore((state) => state.design)
   const designs = useDesignStore((state) => state.designs)
   const remarks = useRemarkStore((state) => state.remarks)
@@ -57,12 +59,15 @@ export function FinishFeedbackDialog() {
     capture: remark.capture,
     processed: null,
   }))
-  const preview = formatFeedbackRound({
-    number: rounds.length + 1,
-    title: title.trim() || defaultRoundTitle(rounds.length + 1),
-    submittedAt: new Date().toISOString(),
-    remarks: roundRemarks,
-  })
+  const preview = formatFeedbackRound(
+    {
+      number: rounds.length + 1,
+      title: title.trim() || defaultRoundTitle(rounds.length + 1),
+      submittedAt: new Date().toISOString(),
+      remarks: roundRemarks,
+    },
+    host.coordinatesSource
+  )
 
   const close = () => setFinishOpen(false)
 
@@ -93,10 +98,8 @@ export function FinishFeedbackDialog() {
               <strong>« {done.title} » enregistré</strong> — retour n°{done.number}, {done.remarks.length} remarque
               {done.remarks.length > 1 ? 's' : ''}.
             </p>
-            <p className="remark-hint">
-              Dites à l’agent que vous avez terminé : il lira ce retour avec l’outil <code>get_feedback</code>. Les
-              remarques restent visibles, marquées transmises ; la page « Retours » suit leur traitement.
-            </p>
+            <p className="remark-hint">{host.finishDone}</p>
+            {host.roundActions?.(done)}
             <div className="dialog-foot">
               <button type="button" className="primary-button" onClick={close}>
                 Fermer
@@ -105,10 +108,7 @@ export function FinishFeedbackDialog() {
           </div>
         ) : (
           <>
-            <p className="dialog-intro">
-              Les remarques cochées sont réunies dans un retour que l’agent lira quand vous lui direz que vous avez
-              terminé.
-            </p>
+            <p className="dialog-intro">{host.finishIntro}</p>
 
             <label className="round-title-field">
               <span className="section-label">Nom du retour</span>
@@ -186,17 +186,21 @@ export function FinishFeedbackDialog() {
             </ul>
 
             <div className="dialog-row-head">
-              <span className="section-label">Ce que l’agent recevra</span>
-              <span className="remark-hint finish-file" title={file}>
-                {file}
-              </span>
+              <span className="section-label">{host.previewLabel}</span>
+              {file && (
+                <span className="remark-hint finish-file" title={file}>
+                  {file}
+                </span>
+              )}
             </div>
             <pre className="finish-preview">{preview}</pre>
 
             <div className="dialog-foot">
-              <span className="remark-hint">
-                <Icon name="info" size={13} /> L’agent lit ce retour avec l’outil <code>get_feedback</code>.
-              </span>
+              {host.finishFootHint && (
+                <span className="remark-hint">
+                  <Icon name="info" size={13} /> {host.finishFootHint}
+                </span>
+              )}
               <button type="button" className="ghost-button" onClick={close}>
                 Retour
               </button>

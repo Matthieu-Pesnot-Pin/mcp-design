@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PATH_SEPARATOR, roundProgress, type RoundStatus } from '@shared/feedback'
+import { useHost } from '../host'
 import { useDesignStore } from '../store/useDesignStore'
 import { useRemarkStore } from '../store/useRemarkStore'
 import { api } from '../utils/api'
@@ -14,8 +15,8 @@ function formatDate(iso: string): string {
 
 /**
  * Page des retours : chaque retour transmis, son avancement, et le détail de
- * ses remarques. L'agent déclare ce qu'il a traité avec
- * `mark_feedback_processed` ; l'utilisateur peut aussi cocher ou rouvrir.
+ * ses remarques. L'agent déclare ce qu'il a traité ; l'utilisateur peut aussi
+ * cocher ou rouvrir.
  */
 export function FeedbackPage() {
   const rounds = useRemarkStore((state) => state.rounds)
@@ -104,6 +105,7 @@ function RoundRow({ round, active, onSelect }: { round: FeedbackRound; active: b
 }
 
 function RoundDetail({ round }: { round: FeedbackRound }) {
+  const host = useHost()
   const renameRound = useRemarkStore((state) => state.renameRound)
   const setRoundsProcessed = useRemarkStore((state) => state.setRoundsProcessed)
   const setRoundsOpen = useRemarkStore((state) => state.setRoundsOpen)
@@ -161,6 +163,7 @@ function RoundDetail({ round }: { round: FeedbackRound }) {
           </button>
         )}
       </div>
+      {host.roundActions?.(round)}
 
       {[...pages].map(([designId, remarks]) => {
         const exists = designs.some((design) => design.id === designId)

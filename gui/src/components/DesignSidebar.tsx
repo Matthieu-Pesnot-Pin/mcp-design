@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useHost } from '../host'
 import { useDesignStore } from '../store/useDesignStore'
 import { draftsOf, useRemarkStore } from '../store/useRemarkStore'
 import { Icon } from './Icon'
@@ -99,6 +100,7 @@ function useDismiss(open: boolean, container: React.RefObject<HTMLElement | null
 }
 
 export function DesignSidebar() {
+  const host = useHost()
   const designs = useDesignStore((state) => state.designs)
   const createDesign = useDesignStore((state) => state.createDesign)
   const setDesignGroup = useDesignStore((state) => state.setDesignGroup)
@@ -236,7 +238,7 @@ export function DesignSidebar() {
         </>
       ),
       count: pendingCount,
-      title: "Pages modifiées depuis leur dernière récupération par l'agent",
+      title: host.pendingFilterTitle,
     },
     {
       id: 'remarks',
@@ -325,9 +327,7 @@ export function DesignSidebar() {
         />
 
         {designs.length === 0 ? (
-          <p className="empty-hint">
-            Aucune page. Créez-en une ici, ou demandez à l'agent d'en générer avec l'outil <code>create_design</code>.
-          </p>
+          <p className="empty-hint">{host.emptyPagesHint}</p>
         ) : (
           visible.total === 0 && <p className="empty-hint">Aucune page ne correspond.</p>
         )}
