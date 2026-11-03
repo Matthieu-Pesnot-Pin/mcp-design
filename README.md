@@ -452,3 +452,9 @@ Pour inspecter le worker sans traverser le proxy, ajoutez `?__direct=1` à son p
 ### Méta-configurations du proxy
 
 `mcp-design` n'expose pas `GET /api/configurations` : il n'a pas de configuration métier (ni token, ni identifiant de ressource) qui justifierait des profils. Le proxy ignore simplement les MCPs qui n'implémentent pas ces routes.
+
+## Publication
+
+Chaque push sur `master`, merge de pull request compris, publie une nouvelle version de `@imenam/mcp-design` sur npm (`.github/workflows/publish.yml`) : `npm ci`, build et tests, puis `npm version patch`, dont le commit et le tag sont poussés sur `master`, et `npm publish`. La publication passe par le trusted publishing de npm (OIDC, sans token), avec attestation de provenance. Un échec du build ou des tests arrête le workflow avant la montée de version.
+
+Sur npmjs.com, le paquet déclare ce workflow comme publieur de confiance (Settings → Trusted publishing → GitHub Actions : `Matthieu-Pesnot-Pin`, `mcp-design`, `publish.yml`, avec `npm publish` dans les actions autorisées). Le commit de version est poussé avec `GITHUB_TOKEN` : si `master` est protégée, la règle doit autoriser GitHub Actions à y pousser.
