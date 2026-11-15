@@ -19,3 +19,11 @@ export function slugify(value: string): string {
     .slice(0, 48);
   return slug || "design";
 }
+
+/** Slug de 48 caractères au plus, suivi du suffixe numérique ou aléatoire d'une collision. */
+const DESIGN_ID = /^[a-z0-9][a-z0-9-]{0,47}(?:-\d{1,2}|-x_[a-z0-9]{4})?$/;
+
+/** Vrai pour un identifiant de la forme produite par `slugify` et `allocateDesignId`. */
+export function isDesignId(value: unknown): value is string {
+  return typeof value === "string" && DESIGN_ID.test(value);
+}

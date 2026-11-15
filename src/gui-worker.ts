@@ -398,10 +398,21 @@ app.post("/api/feedback/processed", async (c) => {
   return c.json(result.data);
 });
 
+/**
+ * En-têtes des images et captures servies depuis le dossier de données : le
+ * fichier ouvert comme document n'exécute aucun script et ne charge aucune
+ * ressource, et son type n'est pas réinterprété par le navigateur.
+ */
+const STORED_FILE_HEADERS = {
+  "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+  "X-Content-Type-Options": "nosniff",
+};
+
 app.get("/api/captures/:name", async (c) => {
   const result = await ipcRequest("GET_CAPTURE", { name: c.req.param("name") }, 10000);
   if (result.error) return c.json({ error: result.error }, 404);
   return c.body(Buffer.from(result.data.png, "base64"), 200, {
+    ...STORED_FILE_HEADERS,
     "Content-Type": "image/png",
     // Une capture n'est jamais réécrite : son nom suit l'id de la remarque.
     "Cache-Control": "private, max-age=31536000, immutable",
@@ -412,6 +423,7 @@ app.get("/api/images/:name", async (c) => {
   const result = await ipcRequest("GET_IMAGE", { name: c.req.param("name") }, 10000);
   if (result.error) return c.json({ error: result.error }, 404);
   return c.body(Buffer.from(result.data.data, "base64"), 200, {
+    ...STORED_FILE_HEADERS,
     "Content-Type": result.data.mimeType,
     // Le nom d'une image suit l'empreinte de son contenu : il ne désigne jamais deux fichiers différents.
     "Cache-Control": "private, max-age=31536000, immutable",

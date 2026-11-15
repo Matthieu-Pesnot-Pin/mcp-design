@@ -245,6 +245,19 @@ test("deleting a draft removes its capture; a sent remark keeps it for its round
   assert.equal(feedback.rounds()[0].remarks[0].text, "B");
 });
 
+test("a capture name of another shape than a remark id is refused", (t) => {
+  const { store, dir, cleanup } = makeStore();
+  t.after(cleanup);
+  const feedback = new FeedbackStore(store);
+
+  fs.writeFileSync(path.join(dir, "feedback", "captures", "notes.png"), "x");
+  for (const name of ["..", "../remarks.json", "..\\remarks.json", "remarks.json", "notes.png", "rm_abcdefgh.svg", "RM_abcdefgh.png", ""]) {
+    assert.throws(() => feedback.capturePath(name), /Invalid capture name/, `capturePath(${JSON.stringify(name)})`);
+    assert.throws(() => feedback.readCapture(name), /Invalid capture name/, `readCapture(${JSON.stringify(name)})`);
+  }
+  assert.throws(() => feedback.readCapture("rm_abcdefgh.png"), /not found/);
+});
+
 test("deleting a design drops its remarks", (t) => {
   const { store, cleanup } = makeStore();
   t.after(cleanup);

@@ -50,6 +50,21 @@ test("the format is read from the bytes, and unknown content is refused", () => 
   }
 });
 
+test("an image name of another shape than a content hash is refused", () => {
+  const { store, dir, cleanup } = makeStore();
+  try {
+    fs.mkdirSync(store.images.getDir(), { recursive: true });
+    fs.writeFileSync(path.join(store.images.getDir(), "photo.png"), "x");
+    fs.writeFileSync(path.join(dir, "outside.png"), "x");
+    for (const name of ["photo.png", "../outside.png", "..\\outside.png", "img_0000000000000000.html", "IMG_0000000000000000.png", ""]) {
+      assert.throws(() => store.images.read(name), /is not an image name of the media library/, `read(${JSON.stringify(name)})`);
+      assert.throws(() => store.images.requireStored(name), /not in the media library/, `requireStored(${JSON.stringify(name)})`);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
 test("natural size is read from JPEG, GIF, WebP and SVG headers", () => {
   const { store, cleanup } = makeStore();
   try {

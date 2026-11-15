@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_ENTRY = path.resolve(__dirname, "../src/gui-worker.js");
 
+const SVG_IMAGE = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+const STORED_FILE_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
 let worker: ChildProcess;
 let port: number;
 let dataDir: string;
@@ -35,6 +38,7 @@ function freePort(): Promise<number> {
 interface RawResponse {
   status: number;
   body: string;
+  headers: http.IncomingHttpHeaders;
 }
 
 /** Requête HTTP brute : `fetch` ne permet pas de fixer l'en-tête Host. */
@@ -59,7 +63,7 @@ function request(options: {
         let body = "";
         res.setEncoding("utf-8");
         res.on("data", (chunk: string) => (body += chunk));
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
       }
     );
     req.on("timeout", () => req.destroy(new Error("timeout")));
@@ -85,13 +89,18 @@ before(async () => {
   delete env.PROXY_URL;
   worker = fork(WORKER_ENTRY, [], { env, stdio: ["ignore", "ignore", "ignore", "ipc"] });
 
-  // Le test tient le rôle du master pour la seule requête IPC que la suite déclenche.
+  // Le test tient le rôle du master pour les requêtes IPC que la suite déclenche.
+  const replies: Record<string, unknown> = {
+    SUBMIT_FEEDBACK: { ok: true },
+    GET_IMAGE: { data: Buffer.from(SVG_IMAGE).toString("base64"), mimeType: "image/svg+xml" },
+    GET_CAPTURE: { png: Buffer.from("capture").toString("base64") },
+  };
   worker.on("message", (message: any) => {
-    if (message?.type === "SUBMIT_FEEDBACK") {
+    if (message?.type in replies) {
       worker.send({
-        type: "SUBMIT_FEEDBACK_RESPONSE",
+        type: `${message.type}_RESPONSE`,
         correlationId: message.correlationId,
-        data: { ok: true },
+        data: replies[message.type],
         timestamp: new Date().toISOString(),
       });
     }
@@ -170,4 +179,29 @@ test("le serveur n'est pas joignable sur l'IPv4 externe de la machine", async (t
     return;
   }
   await assert.rejects(request({ method: "GET", path: "/proxy/health", address }));
+});
+
+test("une image de la médiathèque est servie avec une CSP sandbox et nosniff", async () => {
+  const response = await request({
+    method: "GET",
+    path: "/api/images/img_0000000000000000.svg",
+    headers: { Host: `localhost:${port}` },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body, SVG_IMAGE);
+  assert.equal(response.headers["content-type"], "image/svg+xml");
+  assert.equal(response.headers["content-security-policy"], STORED_FILE_CSP);
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+});
+
+test("une capture est servie avec une CSP sandbox et nosniff", async () => {
+  const response = await request({
+    method: "GET",
+    path: "/api/captures/rm_abcdefgh.png",
+    headers: { Host: `localhost:${port}` },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers["content-type"], "image/png");
+  assert.equal(response.headers["content-security-policy"], STORED_FILE_CSP);
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
 });

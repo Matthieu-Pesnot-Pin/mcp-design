@@ -15,6 +15,7 @@ import {
   type CreateDesignInput,
   type MutateOptions,
 } from "./design-model.js";
+import { isDesignId } from "./ids.js";
 import { ImageStore } from "./image-store.js";
 
 export type { CreateDesignInput, MutateOptions };
@@ -62,7 +63,13 @@ export class DesignStore {
     return this.dataDir;
   }
 
+  /** Fichier d'un design. Refuse un identifiant d'une autre forme que celle produite par `allocateId`. */
   private filePath(id: string): string {
+    if (!isDesignId(id)) {
+      throw new DesignError(
+        `Invalid design id "${id}": expected lowercase letters, digits and dashes, as returned by list_designs or create_design.`
+      );
+    }
     return path.join(this.designsDir, `${id}.json`);
   }
 

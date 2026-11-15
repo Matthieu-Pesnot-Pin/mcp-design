@@ -93,6 +93,10 @@ Chaque requête traverse la garde de [`@imenam/mcp-gui-interface`](https://www.n
 - à tout en-tête `Host` autre que `localhost`, `127.0.0.1` ou `::1` (protection contre le DNS rebinding) ;
 - aux modifications (méthodes autres que `GET`, `HEAD`, `OPTIONS`) venues d'un autre site, d'après `Sec-Fetch-Site` ou, à défaut, `Origin` (sont admis : la machine elle-même, le proxy de `PROXY_URL`).
 
+Les images de la médiathèque et les captures des remarques (`GET /api/images/<nom>`, `GET /api/captures/<nom>`) sont servies avec `Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:` et `X-Content-Type-Options: nosniff` : un SVG ouvert directement dans le navigateur n'exécute aucun script et ne charge aucune ressource.
+
+Un identifiant de design, un nom d'image ou de capture n'est accepté que sous la forme que le serveur génère (`ma-landing-page`, `img_<empreinte>.<ext>`, `rm_<id>.png`) ; toute autre forme est refusée avec une erreur explicite, avant tout accès au disque.
+
 Un design est un simple fichier JSON dans `<data>/designs/<id>.json` — lisible, diffable, versionnable. Les images qu'il affiche sont dans `<data>/images/`.
 
 ---

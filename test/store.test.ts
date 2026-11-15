@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { makeStore } from "./helpers.js";
 import { DesignStore } from "../src/core/design-store.js";
+import { isDesignId } from "../src/core/ids.js";
 import { buildNode, applyPatch, DesignError } from "../src/core/node-factory.js";
 
 test("create allocates a slug id derived from the name", (t) => {
@@ -126,6 +127,37 @@ test("delete removes the file and the design disappears from list", (t) => {
   store.delete(design.id);
   assert.equal(store.list().length, 0);
   assert.throws(() => store.delete(design.id), /not found/);
+});
+
+test("an id of another shape than the generated slugs is refused before any file access", (t) => {
+  const { store, dir, cleanup } = makeStore();
+  t.after(cleanup);
+
+  const outside = path.join(dir, "outside.json");
+  fs.writeFileSync(outside, "{}", "utf-8");
+
+  for (const id of ["../outside", "..\\outside", "a/b", "a\\b","C:outside", "Landing", "a.b", "", "-a", "a".repeat(60)]) {
+    assert.throws(() => store.get(id), /Invalid design id/, `get(${JSON.stringify(id)})`);
+    assert.throws(() => store.has(id), /Invalid design id/, `has(${JSON.stringify(id)})`);
+    assert.throws(() => store.delete(id), /Invalid design id/, `delete(${JSON.stringify(id)})`);
+    assert.throws(() => store.markSynced(id), /Invalid design id/, `markSynced(${JSON.stringify(id)})`);
+    assert.throws(() => store.mutate(id, "user", () => {}), /Invalid design id/, `mutate(${JSON.stringify(id)})`);
+    assert.throws(() => store.duplicate(id), /Invalid design id/, `duplicate(${JSON.stringify(id)})`);
+  }
+  assert.equal(fs.existsSync(outside), true);
+  assert.deepEqual(fs.readdirSync(path.join(dir, "designs")), []);
+});
+
+test("every id the store allocates is accepted back", (t) => {
+  const { store, cleanup } = makeStore();
+  t.after(cleanup);
+
+  const long = "x".repeat(80);
+  for (const name of ["Landing Page", "Landing Page", "---", long, long, "Écran d'accueil"]) {
+    const design = store.create({ name });
+    assert.equal(store.get(design.id).id, design.id);
+  }
+  assert.equal(isDesignId("landing-page-x_a1b2"), true);
 });
 
 test("list reports the number of unsynced changes", (t) => {

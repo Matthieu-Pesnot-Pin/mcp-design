@@ -27,6 +27,9 @@ import {
 
 export type { RemarkTargetInput, SetProcessedInput };
 
+/** Nom d'une capture : l'identifiant de sa remarque, suivi de `.png`. */
+const CAPTURE_NAME = /^rm_[a-z0-9]{8}\.png$/;
+
 export interface AddRemarkInput {
   designId: string;
   target: RemarkTargetInput;
@@ -92,7 +95,9 @@ export class FeedbackStore {
   }
 
   capturePath(name: string): string {
-    if (name !== path.basename(name)) throw new DesignError(`Invalid capture name "${name}".`);
+    if (!CAPTURE_NAME.test(name)) {
+      throw new DesignError(`Invalid capture name "${name}": expected the id of a remark followed by ".png".`);
+    }
     return path.join(this.capturesDir, name);
   }
 
