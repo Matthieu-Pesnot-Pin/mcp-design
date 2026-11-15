@@ -57,7 +57,7 @@ Exemple d'entrée générée :
         "APP_GROUP": "Mon Projet",
         "APP_NAME": "Design Mon Projet",
         "APP_PATH": "/design-mon-projet",
-        "MCP_DESIGN_DATA_DIR": "C:/dev/mon-projet/.design-data",
+        "DATA_DIR": "C:/dev/mon-projet/.design-data",
         "MCP_LOG_DIR": ""
       }
     }
@@ -75,8 +75,8 @@ Exemple d'entrée générée :
 | `APP_NAME` | Nom affiché dans le dashboard du proxy. `PROXY_APP_NAME` puis `GUI_NAME` sont acceptés en repli. |
 | `APP_PATH_PREFIX` | Préfixe de namespace ajouté au chemin **par défaut** (ex. `/abc123` → `/abc123/design-gui`). Sert à isoler plusieurs instances sous un même proxy. |
 | `APP_GROUP` | Section repliable du dashboard du proxy (facultatif). |
-| `MCP_DESIGN_DATA_DIR` | Répertoire de stockage des designs et des remarques. `MCP_DATA_DIR` est accepté en repli. Défaut : `<package>/.design-data`. |
-| `MCP_LOG_DIR` | Répertoire des logs. Défaut : `<data>/logs`. |
+| `DATA_DIR` | **Obligatoire**, sans défaut : répertoire de stockage des designs, des remarques et des images, créé s'il n'existe pas. Le serveur refuse de démarrer sans lui. Le MCP Gateway Manager le renseigne automatiquement. |
+| `MCP_LOG_DIR` | Répertoire des logs. Défaut : `<DATA_DIR>/logs`. |
 
 `PROXY_URL` et `APP_PORT` s'excluent : `PROXY_URL` prime si les deux sont renseignés. **Si aucune des deux n'est définie, la GUI est simplement désactivée** — les outils MCP continuent de fonctionner.
 
@@ -178,7 +178,7 @@ La bibliothèque est figée dans le dépôt par `npm run generate-icons` ([`scri
 { "design_id": "landing", "file_path": "C:/projets/site/assets/hero.jpg", "x": 0, "y": 80, "width": 1440 }
 ```
 
-- **Le fichier est copié** dans `<MCP_DESIGN_DATA_DIR>/images/`, sous un nom tiré de l'empreinte de son contenu (`img_3f9a1c2b7d4e5f60.jpg`). Le design ne stocke que ce nom : le JSON reste lisible, une même image importée deux fois n'est stockée qu'une fois, et la planche ne dépend plus de l'emplacement du fichier d'origine. La médiathèque est commune à toutes les planches du dossier de données.
+- **Le fichier est copié** dans `<DATA_DIR>/images/`, sous un nom tiré de l'empreinte de son contenu (`img_3f9a1c2b7d4e5f60.jpg`). Le design ne stocke que ce nom : le JSON reste lisible, une même image importée deux fois n'est stockée qu'une fois, et la planche ne dépend plus de l'emplacement du fichier d'origine. La médiathèque est commune à toutes les planches du dossier de données.
 - **Taille** : sans `width` ni `height`, la boîte prend les dimensions naturelles de l'image ; avec une seule des deux, l'autre suit ses proportions.
 - **`fit`** dit comment l'image remplit sa boîte : `cover` la remplit en rognant le débordement, `contain` la montre en entier, `fill` l'étire.
 - **Réutiliser une image** : la réponse d'`add_image` donne son nom ; un nœud `{ "type": "image", "image": "img_…" }` dans `add_nodes` la repose sans second import. Un nom absent de la médiathèque est refusé à l'écriture.
@@ -278,7 +278,7 @@ Un lot est intégralement validé avant la moindre écriture : une entrée inval
 
 Un retour est **figé** au moment où l'utilisateur clique sur « Terminer les retours » : `get_feedback` peut le relire autant de fois que nécessaire, rien ne change. Seuls son nom (renommable dans la GUI) et le suivi du traitement évoluent ; **lire un retour ne le marque jamais traité**, seul `mark_feedback_processed` (ou l'utilisateur) le fait. Le texte est celui que la GUI affiche en aperçu avant l'enregistrement — même fonction de mise en forme, donc même contenu. Tant qu'aucun retour n'existe, l'outil dit combien de remarques attendent encore dans la GUI.
 
-Les remarques vivent dans `<MCP_DESIGN_DATA_DIR>/feedback/remarks.json`, les captures PNG dans `<MCP_DESIGN_DATA_DIR>/feedback/captures/` : le même dossier de données que les designs, celui fixé par la configuration du projet.
+Les remarques vivent dans `<DATA_DIR>/feedback/remarks.json`, les captures PNG dans `<DATA_DIR>/feedback/captures/` : le même dossier de données que les designs, celui fixé par la configuration du projet.
 
 ### GUI
 

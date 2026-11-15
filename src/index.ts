@@ -9,6 +9,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } fr
 import { GuiLauncher, createLogger, setupLogging } from "@imenam/mcp-gui-interface";
 
 import { APP_VERSION } from "./version.js";
+import { resolveDataDir } from "./core/data-dir.js";
 import { resolveLogDir } from "./core/log-dir.js";
 import { DesignStore } from "./core/design-store.js";
 import { FeedbackStore, type RemarkTargetInput } from "./core/feedback-store.js";
@@ -74,9 +75,6 @@ function findProjectRoot(startDir: string): string {
 const rootDir = findProjectRoot(__dirname);
 const packageEnvPath = path.join(rootDir, ".env");
 
-setupLogging({ processLabel: "mcp-design", logDir: resolveLogDir(rootDir) });
-const logger = createLogger("mcp-design");
-
 // Rechargé à chaque appel, avec override : le .env local doit primer sur les
 // variables héritées du JSON de déclaration du MCP.
 function getConfig() {
@@ -86,7 +84,11 @@ function getConfig() {
 
 getConfig();
 
-const store = new DesignStore(rootDir);
+const dataDir = resolveDataDir();
+setupLogging({ processLabel: "mcp-design", logDir: resolveLogDir(dataDir) });
+const logger = createLogger("mcp-design");
+
+const store = new DesignStore(dataDir);
 const feedback = new FeedbackStore(store);
 
 const server = new Server({ name: "mcp-design", version: APP_VERSION }, { capabilities: { tools: {} } });
@@ -484,7 +486,7 @@ async function reconnectGui(args: any): Promise<ToolResult> {
   }
   return {
     content: [
-      { type: "text", text: `GUI worker started but did not confirm it was ready within 15s. Check the logs (${resolveLogDir(rootDir)}), then retry.` },
+      { type: "text", text: `GUI worker started but did not confirm it was ready within 15s. Check the logs (${resolveLogDir(dataDir)}), then retry.` },
     ],
     isError: true,
   };

@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 import { fileURLToPath } from "url";
 
 import { IPCMessageSchema } from "../shared/schemas/design.schema.js";
+import { resolveDataDir } from "./core/data-dir.js";
 import { resolveLogDir } from "./core/log-dir.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -66,7 +67,7 @@ function resolveGuiMode(): GuiMode {
 const guiMode = resolveGuiMode();
 const isStandalone = guiMode.kind === "standalone";
 
-setupLogging({ processLabel: "mcp-design:GUI", logDir: resolveLogDir(rootDir) });
+setupLogging({ processLabel: "mcp-design:GUI", logDir: resolveLogDir(resolveDataDir()) });
 const logger = createLogger("mcp-design:GUI");
 
 process.on("uncaughtException", (err) => {

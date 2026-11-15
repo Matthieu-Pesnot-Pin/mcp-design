@@ -85,7 +85,7 @@ function externalIPv4(): string | undefined {
 before(async () => {
   port = await freePort();
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-design-network-"));
-  const env: NodeJS.ProcessEnv = { ...process.env, APP_PORT: String(port), MCP_LOG_DIR: path.join(dataDir, "logs") };
+  const env: NodeJS.ProcessEnv = { ...process.env, APP_PORT: String(port), DATA_DIR: dataDir, MCP_LOG_DIR: path.join(dataDir, "logs") };
   delete env.PROXY_URL;
   worker = fork(WORKER_ENTRY, [], { env, stdio: ["ignore", "ignore", "ignore", "ipc"] });
 

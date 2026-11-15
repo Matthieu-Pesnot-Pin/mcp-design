@@ -49,11 +49,8 @@ export class DesignStore {
    */
   private cache = new Map<string, CacheEntry>();
 
-  constructor(rootDir: string) {
-    // MCP_DESIGN_DATA_DIR est prioritaire ; MCP_DATA_DIR reste accepté pour rester
-    // aligné sur la convention commune aux autres MCPs de l'écosystème.
-    const configured = process.env.MCP_DESIGN_DATA_DIR?.trim() || process.env.MCP_DATA_DIR?.trim();
-    this.dataDir = configured ? path.resolve(configured) : path.join(rootDir, ".design-data");
+  constructor(dataDir: string) {
+    this.dataDir = dataDir;
     this.designsDir = path.join(this.dataDir, "designs");
     fs.mkdirSync(this.designsDir, { recursive: true });
     this.images = new ImageStore(this.dataDir);

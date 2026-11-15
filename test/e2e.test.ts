@@ -39,7 +39,7 @@ class McpClient {
     this.child = spawn(process.execPath, [SERVER_ENTRY], {
       env: {
         ...process.env,
-        MCP_DESIGN_DATA_DIR: dataDir,
+        DATA_DIR: dataDir,
         MCP_LOG_DIR: path.join(dataDir, "logs"),
         PROXY_URL,
         APP_PATH,
