@@ -337,6 +337,10 @@ Trois colonnes : la liste des planches, le canvas, l'inspecteur et les calques.
 - **Déplacement** : molette seule, ou **barre espace maintenue + glisser**. Tant que la barre espace est enfoncée, aucun geste ne peut déplacer un élément, même en partant de l'un d'eux. Le clic molette fait la même chose.
 - Le sélecteur de zoom de la barre d'outils reste disponible pour revenir à une valeur ronde.
 
+### Liens et historique
+
+Chaque vue a sa propre adresse, portée par le fragment de l'URL : `#/page/<id>` pour une page, `#/page/<id>/retours` pour la page « Retours », `#/page/<id>/retours/<n>` pour un retour précis. Ces liens se partagent tels quels, et les boutons Précédent / Suivant du navigateur parcourent les vues visitées. Une adresse sans page ouvre la dernière page consultée (ou la première de la liste) et prend son adresse ; un lien vers une page qui n'existe pas affiche une erreur. Le fragment ne part jamais au serveur : les liens fonctionnent derrière le proxy comme dans la version autonome.
+
 Raccourcis : `V` `R` `O` `L` `T` `I` (outils), `Ctrl+Z` / `Ctrl+Y` (annuler/rétablir), `Ctrl+G` / `Ctrl+Maj+G` (grouper / dissoudre), `Ctrl+D` (dupliquer), `Ctrl+A` (tout sélectionner), `Suppr`, flèches (déplacer d'1 px, 10 px avec `Maj`), `Échap`.
 
 La sauvegarde est automatique et différée. Une modification faite par l'agent pendant que la GUI est ouverte y apparaît dans les 3 secondes : la GUI interroge `GET /api/changes` toutes les 3 s ; une modification faite dans la GUI est enregistrée comme venant de l'utilisateur, et c'est ce que `get_changes` restitue.

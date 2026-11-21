@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PATH_SEPARATOR, roundProgress, type RoundStatus } from '@shared/feedback'
 import { useHost } from '../host'
+import { replaceNextRoute } from '../hooks/useRouteSync'
 import { useDesignStore } from '../store/useDesignStore'
 import { useRemarkStore } from '../store/useRemarkStore'
 import { api } from '../utils/api'
@@ -24,7 +25,9 @@ export function FeedbackPage() {
   const setRoundsProcessed = useRemarkStore((state) => state.setRoundsProcessed)
   const ordered = [...rounds].reverse()
   const firstOpen = rounds.find((round) => roundProgress(round).status !== 'done')
-  const [selected, setSelected] = useState<number | null>(() => (firstOpen ?? rounds.at(-1))?.number ?? null)
+  const selectedRound = useRemarkStore((state) => state.selectedRound)
+  const setSelectedRound = useRemarkStore((state) => state.setSelectedRound)
+  const selected = selectedRound ?? (firstOpen ?? rounds.at(-1))?.number ?? null
   const round = rounds.find((candidate) => candidate.number === selected) ?? null
   const open = rounds.filter((candidate) => roundProgress(candidate).status !== 'done').length
 
@@ -63,7 +66,7 @@ export function FeedbackPage() {
           <ul className="round-list">
             {ordered.map((entry) => (
               <li key={entry.number}>
-                <RoundRow round={entry} active={entry.number === selected} onSelect={() => setSelected(entry.number)} />
+                <RoundRow round={entry} active={entry.number === selected} onSelect={() => setSelectedRound(entry.number)} />
               </li>
             ))}
           </ul>
@@ -126,6 +129,8 @@ function RoundDetail({ round }: { round: FeedbackRound }) {
   const goTo = async (designId: string) => {
     await openDesign(designId)
     await setMode('remarks')
+    // Le passage par la page visée, encore sous les retours, ne compte pas comme une étape de l'historique.
+    replaceNextRoute()
     setRoundsOpen(false)
   }
 

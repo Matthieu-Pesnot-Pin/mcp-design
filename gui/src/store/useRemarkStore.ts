@@ -38,6 +38,8 @@ interface RemarkState {
   finishOpen: boolean
   /** La page des retours est affichée à la place de l'espace de travail. */
   roundsOpen: boolean
+  /** Retour affiché dans la page des retours ; null : le premier non traité. */
+  selectedRound: number | null
 
   setMode: (mode: CanvasMode) => Promise<void>
   refresh: () => Promise<void>
@@ -64,7 +66,9 @@ interface RemarkState {
   setFocused: (id: string | null) => void
   setShowSent: (show: boolean) => void
   setFinishOpen: (open: boolean) => void
+  /** Ouvre ou ferme la page des retours ; l'ouvrir repart du retour par défaut. */
   setRoundsOpen: (open: boolean) => void
+  setSelectedRound: (round: number | null) => void
 }
 
 function fail(err: unknown) {
@@ -88,6 +92,7 @@ export const useRemarkStore = create<RemarkState>((set, get) => {
     showSent: readShowSent(),
     finishOpen: false,
     roundsOpen: false,
+    selectedRound: null,
 
     setMode: async (mode) => {
       if (mode === get().mode) return
@@ -269,7 +274,11 @@ export const useRemarkStore = create<RemarkState>((set, get) => {
     },
 
     setFinishOpen: (finishOpen) => set({ finishOpen }),
-    setRoundsOpen: (roundsOpen) => set({ roundsOpen, composer: null }),
+    setRoundsOpen: (roundsOpen) => {
+      if (roundsOpen === get().roundsOpen) return
+      set({ roundsOpen, composer: null, selectedRound: null })
+    },
+    setSelectedRound: (selectedRound) => set({ selectedRound }),
   }
 })
 
