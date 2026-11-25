@@ -52,6 +52,11 @@ const __dirname = path.dirname(__filename);
 
 // Les flags CLI sont traités avant toute initialisation : ils s'exécutent dans le
 // répertoire de l'utilisateur, pas dans un serveur MCP.
+if (process.argv.slice(2).includes("--migrate-to-manager")) {
+  const { runMigrateToManager } = await import("./cli/migrate-to-manager.js");
+  process.exit(await runMigrateToManager(process.argv.slice(2), process.cwd()));
+}
+
 if (process.argv.slice(2).includes("--claude-setup-mcp")) {
   const argv = process.argv.slice(2);
   const { runSetupMcp, parseGuiExposure } = await import("./cli/setup-mcp.js");

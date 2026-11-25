@@ -84,6 +84,22 @@ Exemple d'entrée générée :
 
 La résolution est assurée par le paquet partagé [`@imenam/mcp-gui-interface`](https://www.npmjs.com/package/@imenam/mcp-gui-interface), qui documente la règle en détail.
 
+### Migrer vers MCP Gateway Manager
+
+Dans le dossier du projet dont le `.mcp.json` déclare mcp-design :
+
+```bash
+npx -y @imenam/mcp-design@latest --migrate-to-manager --name mcp-design
+```
+
+La commande écrit `mcp-design.mcp-import.zip` dans le dossier courant, à importer depuis l'onglet **MCP** de la gateway (« Importer un MCP »). `--name` désigne l'entrée de `.mcp.json` ; il est obligatoire quand mcp-design y est déclaré plusieurs fois, et la commande échoue en listant les entrées sinon.
+
+- **Repris :** les designs, la médiathèque (`images/`), les remarques et leurs captures — copiés sous les verrous du serveur, donc cohérents même serveur lancé — et les variables d'environnement. mcp-design n'a pas de variable secrète.
+- **Écartés :** les logs, les fichiers temporaires (`.tmp`) et les verrous (`.lock`).
+- **Fixés par le hub :** `DATA_DIR` (un ancien `MCP_DESIGN_DATA_DIR` ou `MCP_DATA_DIR` est lu comme dossier de stockage), `PROXY_URL`, `APP_GROUP`, `APP_NAME`, `APP_PATH`, `APP_PORT`, `MCP_LOG_DIR`, ainsi que leurs replis `PROXY_APP_*`, `GUI_PATH`, `GUI_NAME`.
+
+L'archive contient la configuration complète du MCP : supprimez-la une fois importée.
+
 ### Exposition réseau
 
 La GUI écoute sur `127.0.0.1` uniquement, en mode proxy comme en mode `APP_PORT` : elle n'est pas joignable directement depuis une autre machine. Pour y accéder à distance, passez par le [proxy central](https://github.com/imenam/proxy-setup) ou le gateway manager, qui relaient vers `localhost:<port>`.
